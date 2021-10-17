@@ -395,10 +395,6 @@ function _getDefaultStylesheet() {
         stylesheet = _getStylesheet(name.replace('.css', '-high-contrast.css'));
     if (St.Settings.get().gtk_theme == 'Yaru-dark')
         stylesheet = _getStylesheet(name.replace('.css', '-dark.css'));
-    if (St.Settings.get().gtk_theme == 'Yaru-blue')
-        stylesheet = _getStylesheet(name.replace('.css', '-blue.css'));
-    if (St.Settings.get().gtk_theme == 'Yaru-blue-dark')
-        stylesheet = _getStylesheet(name.replace('.css', '-blue-dark.css'));
 
     if (stylesheet == null)
         stylesheet = _getStylesheet(sessionMode.stylesheetName);

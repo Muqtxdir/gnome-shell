@@ -6,6 +6,7 @@
     "enabledExtensions": [
         "ubuntu-dock@ubuntu.com",
         "ubuntu-appindicators@ubuntu.com",
-        "ding@rastersoft.com"
+        "ding@rastersoft.com",
+        "just-perfection-desktop@just-perfection"
     ]
 }
