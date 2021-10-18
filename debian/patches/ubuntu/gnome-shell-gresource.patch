@@ -2,7 +2,7 @@ Index: gnome-shell-40.5/js/ui/main.js
 ===================================================================
 --- gnome-shell-40.5.orig/js/ui/main.js
 +++ gnome-shell-40.5/js/ui/main.js
-@@ -393,6 +393,12 @@ function _getDefaultStylesheet() {
+@@ -393,6 +393,8 @@ function _getDefaultStylesheet() {
      // theme
      if (St.Settings.get().gtk_theme == 'HighContrast')
          stylesheet = _getStylesheet(name.replace('.css', '-high-contrast.css'));
