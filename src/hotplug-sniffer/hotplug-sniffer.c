@@ -86,7 +86,7 @@ invocation_data_new (GVariant *params,
 {
   InvocationData *ret;
 
-  ret = g_new0 (InvocationData, 1);
+  ret = g_slice_new0 (InvocationData);
   ret->parameters = g_variant_ref (params);
   ret->invocation = g_object_ref (invocation);
 
@@ -99,7 +99,7 @@ invocation_data_free (InvocationData *data)
   g_variant_unref (data->parameters);
   g_clear_object (&data->invocation);
 
-  g_free (data);
+  g_slice_free (InvocationData, data);
 }
 
 static void
@@ -269,7 +269,7 @@ print_debug (const gchar *format, ...)
   g_autofree char *timestamp = NULL;
   va_list ap;
   g_autoptr (GDateTime) now = NULL;
-  static size_t once_init_value = 0;
+  static volatile gsize once_init_value = 0;
   static gboolean show_debug = FALSE;
   static guint pid = 0;
 

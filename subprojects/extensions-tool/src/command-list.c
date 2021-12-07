@@ -60,10 +60,7 @@ list_extensions (ListFilterFlags filter, DisplayFormat format)
                                      NULL,
                                      &error);
   if (response == NULL)
-    {
-      g_printerr (_("Failed to connect to GNOME Shell\n"));
-      return FALSE;
-    }
+    return FALSE;
 
   extensions = g_variant_get_child_value (response, 0);
 
@@ -153,7 +150,6 @@ handle_list (int argc, char *argv[], gboolean do_help)
   g_option_context_set_help_enabled (context, FALSE);
   g_option_context_set_summary (context, _("List installed extensions"));
   g_option_context_add_main_entries (context, entries, GETTEXT_PACKAGE);
-  g_option_context_add_group (context, get_option_group());
 
   if (do_help)
     {

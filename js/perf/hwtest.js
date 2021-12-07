@@ -94,8 +94,7 @@ function extractBootTimestamp() {
     return result;
 }
 
-async function run() {
-    /* eslint-disable no-await-in-loop */
+function *run() {
     Scripting.defineScriptEvent("desktopShown", "Finished initial animation");
     Scripting.defineScriptEvent("overviewShowStart", "Starting to show the overview");
     Scripting.defineScriptEvent("overviewShowDone", "Overview finished showing");
@@ -111,7 +110,7 @@ async function run() {
     Scripting.defineScriptEvent("geditLaunch", "gedit application launch");
     Scripting.defineScriptEvent("geditFirstFrame", "first frame of gedit window drawn");
 
-    await Scripting.waitLeisure();
+    yield Scripting.waitLeisure();
     Scripting.scriptEvent('desktopShown');
 
     let interfaceSettings = new Gio.Settings({
@@ -121,22 +120,22 @@ async function run() {
 
     Scripting.scriptEvent('overviewShowStart');
     Main.overview.show();
-    await Scripting.waitLeisure();
+    yield Scripting.waitLeisure();
     Scripting.scriptEvent('overviewShowDone');
 
-    await Scripting.sleep(1000);
+    yield Scripting.sleep(1000);
 
     Scripting.scriptEvent('applicationsShowStart');
     // eslint-disable-next-line require-atomic-updates
     Main.overview.dash.showAppsButton.checked = true;
 
-    await Scripting.waitLeisure();
+    yield Scripting.waitLeisure();
     Scripting.scriptEvent('applicationsShowDone');
 
-    await Scripting.sleep(1000);
+    yield Scripting.sleep(1000);
 
     Main.overview.hide();
-    await Scripting.waitLeisure();
+    yield Scripting.waitLeisure();
 
     // --------------------- //
     // Tests of redraw speed //
@@ -146,46 +145,46 @@ async function run() {
     global.frame_finish_timestamp = true;
 
     for (let k = 0; k < 5; k++)
-        await Scripting.createTestWindow({ maximized: true });
-    await Scripting.waitTestWindows();
+        yield Scripting.createTestWindow({ maximized: true });
+    yield Scripting.waitTestWindows();
 
-    await Scripting.sleep(1000);
+    yield Scripting.sleep(1000);
 
     Scripting.scriptEvent('mainViewDrawStart');
-    await waitAndDraw(1000);
+    yield waitAndDraw(1000);
     Scripting.scriptEvent('mainViewDrawDone');
 
     Main.overview.show();
     Scripting.waitLeisure();
 
-    await Scripting.sleep(1500);
+    yield Scripting.sleep(1500);
 
     Scripting.scriptEvent('overviewDrawStart');
-    await waitAndDraw(1000);
+    yield waitAndDraw(1000);
     Scripting.scriptEvent('overviewDrawDone');
 
-    await Scripting.destroyTestWindows();
+    yield Scripting.destroyTestWindows();
     Main.overview.hide();
 
-    await Scripting.createTestWindow({ maximized: true,
+    yield Scripting.createTestWindow({ maximized: true,
                                        redraws: true });
-    await Scripting.waitTestWindows();
+    yield Scripting.waitTestWindows();
 
-    await Scripting.sleep(1000);
+    yield Scripting.sleep(1000);
 
     Scripting.scriptEvent('redrawTestStart');
-    await Scripting.sleep(1000);
+    yield Scripting.sleep(1000);
     Scripting.scriptEvent('redrawTestDone');
 
-    await Scripting.sleep(1000);
+    yield Scripting.sleep(1000);
     Scripting.scriptEvent('collectTimings');
 
-    await Scripting.destroyTestWindows();
+    yield Scripting.destroyTestWindows();
 
     global.frame_timestamps = false;
     global.frame_finish_timestamp = false;
 
-    await Scripting.sleep(1000);
+    yield Scripting.sleep(1000);
 
     let appSys = Shell.AppSystem.get_default();
     let app = appSys.lookup_app('org.gnome.gedit.desktop');
@@ -198,22 +197,21 @@ async function run() {
         throw new Error('gedit was already running');
 
     while (windows.length == 0) {
-        await waitSignal(global.display, 'window-created');
+        yield waitSignal(global.display, 'window-created');
         windows = app.get_windows();
     }
 
     let actor = windows[0].get_compositor_private();
-    await waitSignal(actor, 'first-frame');
+    yield waitSignal(actor, 'first-frame');
     Scripting.scriptEvent('geditFirstFrame');
 
-    await Scripting.sleep(1000);
+    yield Scripting.sleep(1000);
 
     windows[0].delete(global.get_current_time());
 
-    await Scripting.sleep(1000);
+    yield Scripting.sleep(1000);
 
     interfaceSettings.set_boolean('enable-animations', true);
-    /* eslint-enable no-await-in-loop */
 }
 
 let overviewShowStart;

@@ -43,10 +43,6 @@ struct _ShellNetworkAgentClass
 /* used by SHELL_TYPE_NETWORK_AGENT */
 GType shell_network_agent_get_type (void);
 
-void               shell_network_agent_add_vpn_secret (ShellNetworkAgent *self,
-                                                       gchar             *request_id,
-                                                       gchar             *setting_key,
-                                                       gchar             *setting_value);
 void               shell_network_agent_set_password (ShellNetworkAgent *self,
                                                      gchar             *request_id,
                                                      gchar             *setting_key,

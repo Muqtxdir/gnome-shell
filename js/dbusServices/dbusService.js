@@ -25,8 +25,6 @@ var ServiceImplementation = class {
 
         // subclasses may override this to disable automatic shutdown
         this._autoShutdown = true;
-
-        this._queueShutdownCheck();
     }
 
     // subclasses may override this to own additional names

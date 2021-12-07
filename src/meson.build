@@ -105,13 +105,10 @@ libshell_public_headers = [
   'shell-mount-operation.h',
   'shell-perf-log.h',
   'shell-screenshot.h',
-  'shell-square-bin.h',
   'shell-stack.h',
   'shell-tray-icon.h',
   'shell-tray-manager.h',
   'shell-util.h',
-  'shell-window-preview.h',
-  'shell-window-preview-layout.h',
   'shell-window-tracker.h',
   'shell-wm.h'
 ]
@@ -150,13 +147,10 @@ libshell_sources = [
   'shell-screenshot.c',
   'shell-secure-text-buffer.c',
   'shell-secure-text-buffer.h',
-  'shell-square-bin.c',
   'shell-stack.c',
   'shell-tray-icon.c',
   'shell-tray-manager.c',
   'shell-util.c',
-  'shell-window-preview.c',
-  'shell-window-preview-layout.c',
   'shell-window-tracker.c',
   'shell-wm.c'
 ]
@@ -168,6 +162,15 @@ endif
 libshell_private_sources = [
   'shell-app-cache.c',
 ]
+
+if enable_recorder
+    libshell_sources += ['shell-recorder.c']
+    libshell_public_headers += ['shell-recorder.h']
+
+    libshell_private_sources += ['shell-recorder-src.c']
+    libshell_private_headers += ['shell-recorder-src.h']
+endif
+
 
 libshell_enums = gnome.mkenums_simple('shell-enum-types',
   sources: libshell_public_headers

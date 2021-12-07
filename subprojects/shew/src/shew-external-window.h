@@ -32,12 +32,12 @@ struct _ShewExternalWindowClass
   GObjectClass parent_class;
 
   void (*set_parent_of) (ShewExternalWindow *external_window,
-                         GdkSurface         *child_surface);
+                         GdkWindow          *child_window);
 };
 
 ShewExternalWindow *shew_external_window_new_from_handle (const char *handle_str);
 
 void shew_external_window_set_parent_of (ShewExternalWindow *external_window,
-                                         GdkSurface         *child_surface);
+                                         GdkWindow          *child_window);
 
 GdkDisplay *shew_external_window_get_display (ShewExternalWindow *external_window);

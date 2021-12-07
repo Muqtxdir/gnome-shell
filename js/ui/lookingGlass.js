@@ -37,9 +37,10 @@ const LG_ANIMATION_TIME = 500;
 
 function _getAutoCompleteGlobalKeywords() {
     const keywords = ['true', 'false', 'null', 'new'];
-    // Don't add the private properties of globalThis (i.e., ones starting with '_')
-    const windowProperties = Object.getOwnPropertyNames(globalThis).filter(
-        a => a.charAt(0) !== '_');
+    // Don't add the private properties of window (i.e., ones starting with '_')
+    const windowProperties = Object.getOwnPropertyNames(window).filter(
+        a => a.charAt(0) != '_'
+    );
     const headerProperties = JsParse.getDeclaredConstants(commandHeader);
 
     return keywords.concat(windowProperties).concat(headerProperties);
@@ -205,6 +206,7 @@ var Notebook = GObject.registerClass({
     scrollToBottom(index) {
         let tabData = this._tabs[index];
         tabData._scrollToBottom = true;
+
     }
 
     _onAdjustValueChanged(tabData) {
@@ -481,16 +483,13 @@ class RedBorderEffect extends Clutter.Effect {
         this._pipeline = null;
     }
 
-    vfunc_paint_node(node, paintContext) {
+    vfunc_paint(paintContext) {
+        let framebuffer = paintContext.get_framebuffer();
+        let coglContext = framebuffer.get_context();
         let actor = this.get_actor();
-
-        const actorNode = new Clutter.ActorNode(actor, -1);
-        node.add_child(actorNode);
+        actor.continue_paint(paintContext);
 
         if (!this._pipeline) {
-            const framebuffer = paintContext.get_framebuffer();
-            const coglContext = framebuffer.get_context();
-
             let color = new Cogl.Color();
             color.init_from_4ub(0xff, 0, 0, 0xc4);
 
@@ -501,28 +500,18 @@ class RedBorderEffect extends Clutter.Effect {
         let alloc = actor.get_allocation_box();
         let width = 2;
 
-        const pipelineNode = new Clutter.PipelineNode(this._pipeline);
-        pipelineNode.set_name('Red Border');
-        node.add_child(pipelineNode);
-
-        const box = new Clutter.ActorBox();
-
         // clockwise order
-        box.set_origin(0, 0);
-        box.set_size(alloc.get_width(), width);
-        pipelineNode.add_rectangle(box);
-
-        box.set_origin(alloc.get_width() - width, width);
-        box.set_size(width, alloc.get_height() - width);
-        pipelineNode.add_rectangle(box);
-
-        box.set_origin(0, alloc.get_height() - width);
-        box.set_size(alloc.get_width() - width, width);
-        pipelineNode.add_rectangle(box);
-
-        box.set_origin(0, width);
-        box.set_size(width, alloc.get_height() - width * 2);
-        pipelineNode.add_rectangle(box);
+        framebuffer.draw_rectangle(this._pipeline,
+            0, 0, alloc.get_width(), width);
+        framebuffer.draw_rectangle(this._pipeline,
+            alloc.get_width() - width, width,
+            alloc.get_width(), alloc.get_height());
+        framebuffer.draw_rectangle(this._pipeline,
+            0, alloc.get_height(),
+            alloc.get_width() - width, alloc.get_height() - width);
+        framebuffer.draw_rectangle(this._pipeline,
+            0, alloc.get_height() - width,
+            width, width);
     }
 });
 
@@ -566,8 +555,8 @@ var Inspector = GObject.registerClass({
         this._lookingGlass = lookingGlass;
     }
 
-    vfunc_allocate(box) {
-        this.set_allocation(box);
+    vfunc_allocate(box, flags) {
+        this.set_allocation(box, flags);
 
         if (!this._eventHandler)
             return;
@@ -582,7 +571,7 @@ var Inspector = GObject.registerClass({
         childBox.x2 = childBox.x1 + natWidth;
         childBox.y1 = primary.y + Math.floor((primary.height - natHeight) / 2);
         childBox.y2 = childBox.y1 + natHeight;
-        this._eventHandler.allocate(childBox);
+        this._eventHandler.allocate(childBox, flags);
     }
 
     _close() {
@@ -700,10 +689,7 @@ var Extensions = GObject.registerClass({
             this._extensionsList.remove_actor(this._noExtensions);
 
         this._numExtensions++;
-        const { name } = extension.metadata;
-        const pos = [...this._extensionsList].findIndex(
-            dsp => dsp._extension.metadata.name.localeCompare(name) > 0);
-        this._extensionsList.insert_child_at_index(extensionDisplay, pos);
+        this._extensionsList.add(extensionDisplay);
     }
 
     _onViewSource(actor) {
@@ -766,7 +752,6 @@ var Extensions = GObject.registerClass({
 
     _createExtensionDisplay(extension) {
         let box = new St.BoxLayout({ style_class: 'lg-extension', vertical: true });
-        box._extension = extension;
         let name = new St.Label({
             style_class: 'lg-extension-name',
             text: extension.metadata.name,
@@ -818,191 +803,6 @@ var Extensions = GObject.registerClass({
     }
 });
 
-
-var ActorLink = GObject.registerClass({
-    Signals: {
-        'inspect-actor': {},
-    },
-}, class ActorLink extends St.Button {
-    _init(actor) {
-        this._arrow = new St.Icon({
-            icon_name: 'pan-end-symbolic',
-            icon_size: 8,
-            x_align: Clutter.ActorAlign.CENTER,
-            y_align: Clutter.ActorAlign.CENTER,
-            pivot_point: new Graphene.Point({ x: 0.5, y: 0.5 }),
-        });
-
-        const label = new St.Label({
-            text: actor.toString(),
-            x_align: Clutter.ActorAlign.START,
-        });
-
-        const inspectButton = new St.Button({
-            child: new St.Icon({
-                icon_name: 'insert-object-symbolic',
-                icon_size: 12,
-                y_align: Clutter.ActorAlign.CENTER,
-            }),
-            reactive: true,
-            x_expand: true,
-            x_align: Clutter.ActorAlign.START,
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        inspectButton.connect('clicked', () => this.emit('inspect-actor'));
-
-        const box = new St.BoxLayout();
-        box.add_child(this._arrow);
-        box.add_child(label);
-        box.add_child(inspectButton);
-
-        super._init({
-            reactive: true,
-            track_hover: true,
-            toggle_mode: true,
-            style_class: 'actor-link',
-            child: box,
-            x_align: Clutter.ActorAlign.START,
-        });
-
-        this._actor = actor;
-    }
-
-    vfunc_clicked() {
-        this._arrow.ease({
-            rotation_angle_z: this.checked ? 90 : 0,
-            duration: 250,
-        });
-    }
-});
-
-var ActorTreeViewer = GObject.registerClass(
-class ActorTreeViewer extends St.BoxLayout {
-    _init(lookingGlass) {
-        super._init();
-
-        this._lookingGlass = lookingGlass;
-        this._actorData = new Map();
-    }
-
-    _showActorChildren(actor) {
-        const data = this._actorData.get(actor);
-        if (!data || data.visible)
-            return;
-
-        data.visible = true;
-        data.actorAddedId = actor.connect('actor-added', (container, child) => {
-            this._addActor(data.children, child);
-        });
-        data.actorRemovedId = actor.connect('actor-removed', (container, child) => {
-            this._removeActor(child);
-        });
-
-        for (let child of actor)
-            this._addActor(data.children, child);
-    }
-
-    _hideActorChildren(actor) {
-        const data = this._actorData.get(actor);
-        if (!data || !data.visible)
-            return;
-
-        for (let child of actor)
-            this._removeActor(child);
-
-        data.visible = false;
-        if (data.actorAddedId > 0) {
-            actor.disconnect(data.actorAddedId);
-            data.actorAddedId = 0;
-        }
-        if (data.actorRemovedId > 0) {
-            actor.disconnect(data.actorRemovedId);
-            data.actorRemovedId = 0;
-        }
-        data.children.remove_all_children();
-    }
-
-    _addActor(container, actor) {
-        if (this._actorData.has(actor))
-            return;
-
-        if (actor === this._lookingGlass)
-            return;
-
-        const button = new ActorLink(actor);
-        button.connect('notify::checked', () => {
-            this._lookingGlass.setBorderPaintTarget(actor);
-            if (button.checked)
-                this._showActorChildren(actor);
-            else
-                this._hideActorChildren(actor);
-        });
-        button.connect('inspect-actor', () => {
-            this._lookingGlass.inspectObject(actor, button);
-        });
-
-        const mainContainer = new St.BoxLayout({ vertical: true });
-        const childrenContainer = new St.BoxLayout({
-            vertical: true,
-            style: 'padding: 0 0 0 18px',
-        });
-
-        mainContainer.add_child(button);
-        mainContainer.add_child(childrenContainer);
-
-        this._actorData.set(actor, {
-            button,
-            container: mainContainer,
-            children: childrenContainer,
-            visible: false,
-            actorAddedId: 0,
-            actorRemovedId: 0,
-            actorDestroyedId: actor.connect('destroy', () => this._removeActor(actor)),
-        });
-
-        let belowChild = null;
-        const nextSibling = actor.get_next_sibling();
-        if (nextSibling && this._actorData.has(nextSibling))
-            belowChild = this._actorData.get(nextSibling).container;
-
-        container.insert_child_above(mainContainer, belowChild);
-    }
-
-    _removeActor(actor) {
-        const data = this._actorData.get(actor);
-        if (!data)
-            return;
-
-        for (let child of actor)
-            this._removeActor(child);
-
-        if (data.actorAddedId > 0) {
-            actor.disconnect(data.actorAddedId);
-            data.actorAddedId = 0;
-        }
-        if (data.actorRemovedId > 0) {
-            actor.disconnect(data.actorRemovedId);
-            data.actorRemovedId = 0;
-        }
-        if (data.actorDestroyedId > 0) {
-            actor.disconnect(data.actorDestroyedId);
-            data.actorDestroyedId = 0;
-        }
-        data.container.destroy();
-        this._actorData.delete(actor);
-    }
-
-    vfunc_map() {
-        super.vfunc_map();
-        this._addActor(this, global.stage);
-    }
-
-    vfunc_unmap() {
-        super.vfunc_unmap();
-        this._removeActor(global.stage);
-    }
-});
-
 var LookingGlass = GObject.registerClass(
 class LookingGlass extends St.BoxLayout {
     _init() {
@@ -1034,9 +834,9 @@ class LookingGlass extends St.BoxLayout {
         Main.uiGroup.add_actor(this);
         Main.uiGroup.set_child_below_sibling(this,
                                              Main.layoutManager.panelBox);
-        Main.layoutManager.panelBox.connect('notify::allocation',
+        Main.layoutManager.panelBox.connect('allocation-changed',
                                             this._queueResize.bind(this));
-        Main.layoutManager.keyboardBox.connect('notify::allocation',
+        Main.layoutManager.keyboardBox.connect('allocation-changed',
                                                this._queueResize.bind(this));
 
         this._objInspector = new ObjInspector(this);
@@ -1118,9 +918,6 @@ class LookingGlass extends St.BoxLayout {
         this._extensions = new Extensions(this);
         notebook.appendPage('Extensions', this._extensions);
 
-        this._actorTreeViewer = new ActorTreeViewer(this);
-        notebook.appendPage('Actors', this._actorTreeViewer);
-
         this._entry.clutter_text.connect('activate', (o, _e) => {
             // Hide any completions we are currently showing
             this._hideCompletions();
@@ -1129,6 +926,10 @@ class LookingGlass extends St.BoxLayout {
             // Ensure we don't get newlines in the command; the history file is
             // newline-separated.
             text = text.replace('\n', ' ');
+            // Strip leading and trailing whitespace
+            text = text.replace(/^\s+/g, '').replace(/\s+$/g, '');
+            if (text == '')
+                return true;
             this._evaluate(text);
             return true;
         });
@@ -1236,9 +1037,7 @@ class LookingGlass extends St.BoxLayout {
     }
 
     _evaluate(command) {
-        command = this._history.addItem(command); // trims command
-        if (!command)
-            return;
+        this._history.addItem(command);
 
         let lines = command.split(';');
         lines.push('return %s'.format(lines.pop()));

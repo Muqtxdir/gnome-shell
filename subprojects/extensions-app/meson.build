@@ -1,19 +1,10 @@
 project('gnome-extensions-app',
-  version: '40.5',
-  meson_version: '>= 0.53.0',
+  version: '3.36.9',
+  meson_version: '>= 0.47.0',
   license: 'GPLv2+'
 )
 
-if get_option('profile') == 'development'
-  profile = '.Devel'
-  vcs_tag = run_command('git', 'rev-parse', '--short', '@').stdout().strip()
-else
-  profile = ''
-  vcs_tag = ''
-endif
-
-base_id = 'org.gnome.Extensions'
-app_id = base_id + profile
+app_id = 'org.gnome.Extensions'
 prgname = 'gnome-extensions-app'
 
 gnome = import('gnome')
@@ -46,7 +37,6 @@ servicedir = join_paths(datadir, 'dbus-1', 'services')
 
 gjs = find_program('gjs')
 appstream_util = find_program('appstream-util', required: false)
-desktop_file_validate = find_program('desktop-file-validate', required: false)
 
 subdir('data')
 subdir('js')
@@ -74,6 +64,8 @@ if not meson.is_subproject()
     'debug': get_option('debug'),
   }
 
-  summary(summary_dirs, section: 'Directories')
-  summary(summary_build, section: 'Build Configuration')
+  if meson.version().version_compare('>= 0.53.0')
+    summary(summary_dirs, section: 'Directories')
+    summary(summary_build, section: 'Build Configuration')
+  endif
 endif

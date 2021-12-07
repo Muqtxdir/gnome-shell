@@ -25,8 +25,8 @@
 #include "cr-string.h"
 
 /**
- *Instantiates a #CRString
- *@return the newly instantiated #CRString
+ *Instanciates a #CRString
+ *@return the newly instanciated #CRString
  *Must be freed with cr_string_destroy().
  */
 CRString *
@@ -45,10 +45,10 @@ cr_string_new (void)
 }
 
 /**
- *Instantiate a string and initialise it to
+ *Instanciate a string and initialise it to
  *a_string.
  *@param a_string the initial string
- *@return the newly instantiated string.
+ *@return the newly instanciated string.
  */
 CRString  *
 cr_string_new_from_string (const gchar * a_string)
@@ -66,10 +66,10 @@ cr_string_new_from_string (const gchar * a_string)
 }
 
 /**
- *Instantiates a #CRString from an instance of GString.
+ *Instanciates a #CRString from an instance of GString.
  *@param a_string the input string that will be copied into
- *the newly instantiated #CRString
- *@return the newly instantiated #CRString.
+ *the newly instanciated #CRString
+ *@return the newly instanciated #CRString.
  */
 CRString *
 cr_string_new_from_gstring (GString const *a_string)

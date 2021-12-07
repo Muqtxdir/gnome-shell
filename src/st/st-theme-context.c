@@ -118,23 +118,16 @@ st_theme_context_class_init (StThemeContextClass *klass)
   /**
    * StThemeContext:scale-factor:
    *
-   * The scaling factor used for HiDPI scaling.
+   * The scaling factor used or high dpi scaling.
    */
   g_object_class_install_property (object_class,
                                    PROP_SCALE_FACTOR,
                                    g_param_spec_int ("scale-factor",
                                                      "Scale factor",
-                                                     "Integer scale factor used for HiDPI scaling",
+                                                     "Integer scale factor used for high dpi scaling",
                                                      0, G_MAXINT, 1,
                                                      ST_PARAM_READWRITE));
 
-  /**
-   * StThemeContext::changed:
-   * @self: a #StThemeContext
-   *
-   * Emitted when the icon theme, font, resolution, scale factor or the current
-   * theme's custom stylesheets change.
-   */
   signals[CHANGED] =
     g_signal_new ("changed",
                   G_TYPE_FROM_CLASS (klass),
@@ -221,8 +214,6 @@ st_theme_context_get_property (GObject    *object,
  * This can be useful in testing scenarios, or if using StThemeContext
  * with something other than #ClutterActor objects, but you generally
  * should use st_theme_context_get_for_stage() instead.
- *
- * Returns: (transfer full): a new #StThemeContext
  */
 StThemeContext *
 st_theme_context_new (void)
@@ -305,7 +296,7 @@ on_icon_theme_changed (StTextureCache *cache,
  *
  * Gets a singleton theme context associated with the stage.
  *
- * Returns: (transfer none): the singleton theme context for the stage
+ * Return value: (transfer none): the singleton theme context for the stage
  */
 StThemeContext *
 st_theme_context_get_for_stage (ClutterStage *stage)
@@ -329,11 +320,10 @@ st_theme_context_get_for_stage (ClutterStage *stage)
 /**
  * st_theme_context_set_theme:
  * @context: a #StThemeContext
- * @theme: a #StTheme
  *
  * Sets the default set of theme stylesheets for the context. This theme will
  * be used for the root node and for nodes descending from it, unless some other
- * style is explicitly specified.
+ * style is explicitely specified.
  */
 void
 st_theme_context_set_theme (StThemeContext          *context,
@@ -368,7 +358,7 @@ st_theme_context_set_theme (StThemeContext          *context,
  *
  * Gets the default theme for the context. See st_theme_context_set_theme()
  *
- * Returns: (transfer none): the default theme for the context
+ * Return value: (transfer none): the default theme for the context
  */
 StTheme *
 st_theme_context_get_theme (StThemeContext *context)
@@ -385,8 +375,8 @@ st_theme_context_get_theme (StThemeContext *context)
  *
  * Sets the default font for the theme context. This is the font that
  * is inherited by the root node of the tree of theme nodes. If the
- * font is not overridden, then this font will be used. If the font is
- * partially modified (for example, with 'font-size: 110%'), then that
+ * font is not overriden, then this font will be used. If the font is
+ * partially modified (for example, with 'font-size: 110%', then that
  * modification is based on this font.
  */
 void
@@ -411,7 +401,7 @@ st_theme_context_set_font (StThemeContext             *context,
  *
  * Gets the default font for the theme context. See st_theme_context_set_font().
  *
- * Returns: the default font for the theme context.
+ * Return value: the default font for the theme context.
  */
 const PangoFontDescription *
 st_theme_context_get_font (StThemeContext *context)
@@ -429,7 +419,7 @@ st_theme_context_get_font (StThemeContext *context)
  * context. For the node tree associated with a stage, this node represents
  * styles applied to the stage itself.
  *
- * Returns: (transfer none): the root node of the context's style tree
+ * Return value: (transfer none): the root node of the context's style tree
  */
 StThemeNode *
 st_theme_context_get_root_node (StThemeContext *context)
@@ -449,7 +439,7 @@ st_theme_context_get_root_node (StThemeContext *context)
  * Return an existing node matching @node, or if that isn't possible,
  * @node itself.
  *
- * Returns: (transfer none): a node with the same properties as @node
+ * Return value: (transfer none): a node with the same properties as @node
  */
 StThemeNode *
 st_theme_context_intern_node (StThemeContext *context,
@@ -471,7 +461,7 @@ st_theme_context_intern_node (StThemeContext *context,
  *
  * Return the current scale factor of @context.
  *
- * Returns: an integer scale factor
+ * Return value: a scale factor
  */
 int
 st_theme_context_get_scale_factor (StThemeContext *context)

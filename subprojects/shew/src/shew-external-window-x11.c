@@ -21,8 +21,7 @@
 #include <errno.h>
 #include <gdk/gdk.h>
 #ifdef GDK_WINDOWING_X11
-#include <gdk/x11/gdkx.h>
-#include <X11/Xlib.h>
+#include <gdk/gdkx.h>
 #endif
 #include <stdlib.h>
 
@@ -34,7 +33,7 @@ struct _ShewExternalWindowX11
 {
   ShewExternalWindow parent;
 
-  int foreign_xid;
+  GdkWindow *foreign_gdk_window;
 };
 
 G_DEFINE_TYPE (ShewExternalWindowX11, shew_external_window_x11,
@@ -55,29 +54,13 @@ get_x11_display (void)
   return x11_display;
 }
 
-static gboolean
-check_foreign_xid (GdkDisplay *display,
-                   int         xid)
-{
-  gboolean result = FALSE;
-#ifdef GDK_WINDOWING_X11
-  XWindowAttributes attrs;
-
-  gdk_x11_display_error_trap_push (display);
-  result = XGetWindowAttributes (GDK_DISPLAY_XDISPLAY (display), xid, &attrs);
-  if (gdk_x11_display_error_trap_pop (display))
-    return FALSE;
-
-#endif
-  return result;
-}
-
 ShewExternalWindowX11 *
 shew_external_window_x11_new (const char *handle_str)
 {
   ShewExternalWindowX11 *external_window_x11;
   GdkDisplay *display;
   int xid;
+  GdkWindow *foreign_gdk_window = NULL;
 
   display = get_x11_display ();
   if (!display)
@@ -94,32 +77,43 @@ shew_external_window_x11_new (const char *handle_str)
       return NULL;
     }
 
-  if (!check_foreign_xid (display, xid))
+#ifdef GDK_WINDOWING_X11
+  foreign_gdk_window = gdk_x11_window_foreign_new_for_display (display, xid);
+#endif
+
+  if (!foreign_gdk_window)
     {
-      g_warning ("Failed to find foreign window for XID %d", xid);
+      g_warning ("Failed to create foreign window for XID %d", xid);
       return NULL;
     }
 
   external_window_x11 = g_object_new (SHEW_TYPE_EXTERNAL_WINDOW_X11,
                                       "display", display,
                                       NULL);
-  external_window_x11->foreign_xid = xid;
+  external_window_x11->foreign_gdk_window = foreign_gdk_window;
 
   return external_window_x11;
 }
 
 static void
 shew_external_window_x11_set_parent_of (ShewExternalWindow *external_window,
-                                        GdkSurface         *child_surface)
+                                        GdkWindow      *child_window)
 {
   ShewExternalWindowX11 *external_window_x11 =
     SHEW_EXTERNAL_WINDOW_X11 (external_window);
 
-#ifdef GDK_WINDOWING_X11
-  XSetTransientForHint (GDK_SURFACE_XDISPLAY (child_surface),
-                        GDK_SURFACE_XID (child_surface),
-                        external_window_x11->foreign_xid);
-#endif
+  gdk_window_set_transient_for (child_window,
+                                external_window_x11->foreign_gdk_window);
+}
+
+static void
+shew_external_window_x11_dispose (GObject *object)
+{
+  ShewExternalWindowX11 *external_window_x11 = SHEW_EXTERNAL_WINDOW_X11 (object);
+
+  g_clear_object (&external_window_x11->foreign_gdk_window);
+
+  G_OBJECT_CLASS (shew_external_window_x11_parent_class)->dispose (object);
 }
 
 static void
@@ -130,7 +124,10 @@ shew_external_window_x11_init (ShewExternalWindowX11 *external_window_x11)
 static void
 shew_external_window_x11_class_init (ShewExternalWindowX11Class *klass)
 {
+  GObjectClass *object_class = G_OBJECT_CLASS (klass);
   ShewExternalWindowClass *external_window_class = SHEW_EXTERNAL_WINDOW_CLASS (klass);
+
+  object_class->dispose = shew_external_window_x11_dispose;
 
   external_window_class->set_parent_of = shew_external_window_x11_set_parent_of;
 }

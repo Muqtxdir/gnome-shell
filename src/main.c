@@ -2,7 +2,7 @@
 
 #include "config.h"
 
-#if defined (HAVE_MALLINFO) || defined (HAVE_MALLINFO2)
+#ifdef HAVE_MALLINFO
 #include <malloc.h>
 #endif
 #include <stdlib.h>
@@ -27,6 +27,7 @@
 extern GType gnome_shell_plugin_get_type (void);
 
 #define SHELL_DBUS_SERVICE "org.gnome.Shell"
+#define MAGNIFIER_DBUS_SERVICE "org.gnome.Magnifier"
 
 #define WM_NAME "GNOME Shell"
 #define GNOME_WM_KEYBINDINGS "Mutter,GNOME Shell"
@@ -91,6 +92,35 @@ shell_dbus_acquire_name (GDBusProxy  *bus,
 }
 
 static void
+shell_dbus_acquire_names (GDBusProxy  *bus,
+                          guint32      request_name_flags,
+                          const gchar *name,
+                          gboolean     fatal, ...) G_GNUC_NULL_TERMINATED;
+
+static void
+shell_dbus_acquire_names (GDBusProxy  *bus,
+                          guint32      request_name_flags,
+                          const gchar *name,
+                          gboolean     fatal, ...)
+{
+  va_list al;
+  guint32 request_name_result;
+  va_start (al, fatal);
+  for (;;)
+  {
+    shell_dbus_acquire_name (bus,
+                             request_name_flags,
+                             &request_name_result,
+                             name, fatal);
+    name = va_arg (al, gchar *);
+    if (!name)
+      break;
+    fatal = va_arg (al, gboolean);
+  }
+  va_end (al);
+}
+
+static void
 shell_dbus_init (gboolean replace)
 {
   GDBusConnection *session;
@@ -136,6 +166,19 @@ shell_dbus_init (gboolean replace)
       exit (1);
     }
 
+  /*
+   * We always specify REPLACE_EXISTING to ensure we kill off
+   * the existing service if it was running.
+   */
+  request_name_flags |= G_BUS_NAME_OWNER_FLAGS_REPLACE;
+
+  shell_dbus_acquire_names (bus,
+                            request_name_flags,
+  /* Also grab org.gnome.Panel to replace any existing panel process */
+                            "org.gnome.Panel", TRUE,
+  /* ...and the org.gnome.Magnifier service. */
+                            MAGNIFIER_DBUS_SERVICE, FALSE,
+                            NULL);
   g_object_unref (bus);
   g_object_unref (session);
 }
@@ -230,12 +273,8 @@ static void
 malloc_statistics_callback (ShellPerfLog *perf_log,
                             gpointer      data)
 {
-#if defined (HAVE_MALLINFO) || defined (HAVE_MALLINFO2)
-#ifdef HAVE_MALLINFO2
-  struct mallinfo2 info = mallinfo2 ();
-#else
+#ifdef HAVE_MALLINFO
   struct mallinfo info = mallinfo ();
-#endif
 
   shell_perf_log_update_statistic_i (perf_log,
                                      "malloc.arenaSize",
@@ -246,7 +285,7 @@ malloc_statistics_callback (ShellPerfLog *perf_log,
   shell_perf_log_update_statistic_i (perf_log,
                                      "malloc.usedSize",
                                      info.uordblks);
-#endif /* defined (HAVE_MALLINFO) || defined (HAVE_MALLINFO2) */
+#endif
 }
 
 static void
@@ -549,7 +588,10 @@ main (int argc, char **argv)
   meta_set_wm_name (WM_NAME);
   meta_set_gnome_wm_keybindings (GNOME_WM_KEYBINDINGS);
 
+  /* Prevent meta_init() from causing gtk to load the atk-bridge*/
+  g_setenv ("NO_AT_BRIDGE", "1", TRUE);
   meta_init ();
+  g_unsetenv ("NO_AT_BRIDGE");
 
   /* FIXME: Add gjs API to set this stuff and don't depend on the
    * environment.  These propagate to child processes.
@@ -589,9 +631,7 @@ main (int argc, char **argv)
   setup_debug_signal_listners ();
 
   shell_profiler_init ();
-  meta_start ();
-  meta_run_main_loop ();
-  ecode = meta_get_exit_code ();
+  ecode = meta_run ();
   shell_profiler_shutdown ();
 
   g_debug ("Doing final cleanup");

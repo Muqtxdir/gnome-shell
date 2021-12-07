@@ -1,3 +1,0 @@
-data/org.gnome.Shell@wayland.service.in
-data/org.gnome.Shell@x11.service.in
-subprojects/extensions-tool/src/templates/indicator/extension.js

@@ -26,7 +26,6 @@
 #include <math.h>
 #include <string.h>
 #include <meta/main.h>
-#include <meta/meta-backend.h>
 
 static ClutterActor *stage;
 static StThemeNode *root;
@@ -380,7 +379,7 @@ test_border (void)
 
   /* group2 is defined as having a thin black border along the top three
    * sides with rounded joins, then a square-joined green border at the
-   * bottom
+   * botttom
    */
 
   assert_length ("group2", "border-top-width", 2.,
@@ -513,16 +512,12 @@ test_pseudo_class (void)
                  st_theme_node_get_border_width (labelNode, ST_SIDE_TOP));
 
   st_widget_remove_style_pseudo_class (label, "boxed");
-  g_assert (!st_widget_has_style_pseudo_class (label, "boxed"));
-  g_assert (st_widget_has_style_pseudo_class (label, "insensitive"));
+  g_assert (st_widget_get_style_pseudo_class (label) == NULL);
   labelNode = st_widget_get_theme_node (label);
   assert_foreground_color (labelNode, "label", 0x000000ff);
   assert_text_decoration  (labelNode, "label", 0);
   assert_length ("label", "border-width", 0.,
                  st_theme_node_get_border_width (labelNode, ST_SIDE_TOP));
-
-  clutter_actor_set_reactive (CLUTTER_ACTOR (label), TRUE);
-  g_assert (st_widget_get_style_pseudo_class (label) == NULL);
 }
 
 static void
@@ -538,7 +533,6 @@ test_inline_style (void)
 int
 main (int argc, char **argv)
 {
-  MetaBackend *backend;
   StTheme *theme;
   StThemeContext *context;
   PangoFontDescription *font_desc;
@@ -552,8 +546,7 @@ main (int argc, char **argv)
 
   meta_test_init ();
 
-  if (chdir (cwd) < 0)
-    g_error ("chdir('%s') failed: %s", cwd, g_strerror (errno));
+  chdir (cwd);
 
   /* Make sure our assumptions about resolution are correct */
   g_object_set (clutter_settings_get_default (), "font-dpi", -1, NULL);
@@ -562,8 +555,7 @@ main (int argc, char **argv)
   theme = st_theme_new (file, NULL, NULL);
   g_object_unref (file);
 
-  backend = meta_get_backend ();
-  stage = meta_backend_get_stage (backend);
+  stage = clutter_stage_new ();
   context = st_theme_context_get_for_stage (CLUTTER_STAGE (stage));
   st_theme_context_set_theme (context, theme);
 
@@ -573,26 +565,26 @@ main (int argc, char **argv)
 
   root = st_theme_context_get_root_node (context);
   group1 = st_theme_node_new (context, root, NULL,
-                              CLUTTER_TYPE_ACTOR, "group1", NULL, NULL, NULL);
+                              CLUTTER_TYPE_GROUP, "group1", NULL, NULL, NULL);
   text1 = st_theme_node_new  (context, group1, NULL,
                               CLUTTER_TYPE_TEXT, "text1", "special-text", NULL, NULL);
   text2 = st_theme_node_new  (context, group1, NULL,
                               CLUTTER_TYPE_TEXT, "text2", NULL, NULL, NULL);
   group2 = st_theme_node_new (context, root, NULL,
-                              CLUTTER_TYPE_ACTOR, "group2", NULL, NULL, NULL);
+                              CLUTTER_TYPE_GROUP, "group2", NULL, NULL, NULL);
   group4 = st_theme_node_new (context, root, NULL,
-                              CLUTTER_TYPE_ACTOR, "group4", NULL, NULL, NULL);
+                              CLUTTER_TYPE_GROUP, "group4", NULL, NULL, NULL);
   group5 = st_theme_node_new (context, root, NULL,
-                              CLUTTER_TYPE_ACTOR, "group5", NULL, NULL, NULL);
+                              CLUTTER_TYPE_GROUP, "group5", NULL, NULL, NULL);
   group6 = st_theme_node_new (context, root, NULL,
-                              CLUTTER_TYPE_ACTOR, "group6", NULL, NULL, NULL);
+                              CLUTTER_TYPE_GROUP, "group6", NULL, NULL, NULL);
   text3 = st_theme_node_new  (context, group2, NULL,
                               CLUTTER_TYPE_TEXT, "text3", NULL, NULL,
                               "color: #0000ff; padding-bottom: 12px;");
   text4 = st_theme_node_new  (context, group2, NULL,
                               CLUTTER_TYPE_TEXT, "text4", NULL, "visited hover", NULL);
   group3 = st_theme_node_new (context, group2, NULL,
-                              CLUTTER_TYPE_ACTOR, "group3", NULL, "hover", NULL);
+                              CLUTTER_TYPE_GROUP, "group3", NULL, "hover", NULL);
   button = st_theme_node_new (context, root, NULL,
                               ST_TYPE_BUTTON, "button", NULL, NULL, NULL);
 

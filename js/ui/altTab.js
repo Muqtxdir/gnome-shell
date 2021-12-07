@@ -68,8 +68,8 @@ class AppSwitcherPopup extends SwitcherPopup.SwitcherPopup {
         this._items = this._switcherList.icons;
     }
 
-    vfunc_allocate(box) {
-        super.vfunc_allocate(box);
+    vfunc_allocate(box, flags) {
+        super.vfunc_allocate(box, flags);
 
         // Allocate the thumbnails
         // We try to avoid overflowing the screen so we base the resulting size on
@@ -102,7 +102,7 @@ class AppSwitcherPopup extends SwitcherPopup.SwitcherPopup {
             this._thumbnails.addClones(primary.y + primary.height - bottomPadding - childBox.y1);
             let [, childNaturalHeight] = this._thumbnails.get_preferred_height(-1);
             childBox.y2 = childBox.y1 + childNaturalHeight;
-            this._thumbnails.allocate(childBox);
+            this._thumbnails.allocate(childBox, flags);
         }
     }
 
@@ -164,7 +164,6 @@ class AppSwitcherPopup extends SwitcherPopup.SwitcherPopup {
     }
 
     _keyPressHandler(keysym, action) {
-        const rtl = Clutter.get_default_text_direction() === Clutter.TextDirection.RTL;
         if (action == Meta.KeyBindingAction.SWITCH_GROUP) {
             if (!this._thumbnailsFocused)
                 this._select(this._selectedIndex, 0);
@@ -180,9 +179,9 @@ class AppSwitcherPopup extends SwitcherPopup.SwitcherPopup {
             this._quitApplication(this._selectedIndex);
         } else if (this._thumbnailsFocused) {
             if (keysym === Clutter.KEY_Left)
-                this._select(this._selectedIndex, rtl ? this._nextWindow() : this._previousWindow());
+                this._select(this._selectedIndex, this._previousWindow());
             else if (keysym === Clutter.KEY_Right)
-                this._select(this._selectedIndex, rtl ? this._previousWindow() : this._nextWindow());
+                this._select(this._selectedIndex, this._nextWindow());
             else if (keysym === Clutter.KEY_Up)
                 this._select(this._selectedIndex, null, true);
             else if (keysym === Clutter.KEY_w || keysym === Clutter.KEY_W || keysym === Clutter.KEY_F4)
@@ -190,9 +189,9 @@ class AppSwitcherPopup extends SwitcherPopup.SwitcherPopup {
             else
                 return Clutter.EVENT_PROPAGATE;
         } else if (keysym == Clutter.KEY_Left) {
-            this._select(rtl ? this._next() : this._previous());
+            this._select(this._previous());
         } else if (keysym == Clutter.KEY_Right) {
-            this._select(rtl ? this._previous() : this._next());
+            this._select(this._next());
         } else if (keysym == Clutter.KEY_Down) {
             this._select(this._selectedIndex, 0);
         } else {
@@ -402,7 +401,6 @@ class CyclerHighlight extends St.Widget {
     _init() {
         super._init({ layout_manager: new Clutter.BinLayout() });
         this._window = null;
-        this._sizeChangedId = 0;
 
         this._clone = new Clutter.Clone();
         this.add_actor(this._clone);
@@ -416,6 +414,7 @@ class CyclerHighlight extends St.Widget {
 
         this.add_constraint(constraint);
 
+        this.connect('notify::allocation', this._onAllocationChanged.bind(this));
         this.connect('destroy', this._onDestroy.bind(this));
     }
 
@@ -423,39 +422,31 @@ class CyclerHighlight extends St.Widget {
         if (this._window == w)
             return;
 
-        if (this._sizeChangedId)
-            this._window.disconnect(this._sizeChangedId);
-
         this._window = w;
 
         if (this._clone.source)
             this._clone.source.sync_visibility();
 
-        const windowActor = this._window?.get_compositor_private() ?? null;
+        let windowActor = this._window
+            ? this._window.get_compositor_private() : null;
 
         if (windowActor)
             windowActor.hide();
 
         this._clone.source = windowActor;
-
-        if (this._window) {
-            this._onSizeChanged();
-            this._sizeChangedId = this._window.connect('size-changed',
-                this._onSizeChanged.bind(this));
-        } else {
-            this._highlight.set_size(0, 0);
-            this._highlight.hide();
-        }
     }
 
-    _onSizeChanged() {
-        const bufferRect = this._window.get_buffer_rect();
-        const rect = this._window.get_frame_rect();
-        this._highlight.set_size(rect.width, rect.height);
-        this._highlight.set_position(
-            rect.x - bufferRect.x,
-            rect.y - bufferRect.y);
-        this._highlight.show();
+    _onAllocationChanged() {
+        if (!this._window) {
+            this._highlight.set_size(0, 0);
+            this._highlight.hide();
+        } else {
+            let [x, y] = this.allocation.get_origin();
+            let rect = this._window.get_frame_rect();
+            this._highlight.set_size(rect.width, rect.height);
+            this._highlight.set_position(rect.x - x, rect.y - y);
+            this._highlight.show();
+        }
     }
 
     _onDestroy() {
@@ -534,23 +525,9 @@ var CyclerPopup = GObject.registerClass({
 
 var GroupCyclerPopup = GObject.registerClass(
 class GroupCyclerPopup extends CyclerPopup {
-    _init() {
-        this._settings = new Gio.Settings({ schema_id: 'org.gnome.shell.app-switcher' });
-        super._init();
-    }
-
     _getWindows() {
         let app = Shell.WindowTracker.get_default().focus_app;
-        let appWindows = app?.get_windows() ?? [];
-
-        if (this._settings.get_boolean('current-workspace-only')) {
-            const workspaceManager = global.workspace_manager;
-            const workspace = workspaceManager.get_active_workspace();
-            appWindows = appWindows.filter(
-                window => window.located_on_workspace(workspace));
-        }
-
-        return appWindows;
+        return app ? app.get_windows() : [];
     }
 
     _keyPressHandler(keysym, action) {
@@ -599,15 +576,14 @@ class WindowSwitcherPopup extends SwitcherPopup.SwitcherPopup {
     }
 
     _keyPressHandler(keysym, action) {
-        const rtl = Clutter.get_default_text_direction() === Clutter.TextDirection.RTL;
         if (action == Meta.KeyBindingAction.SWITCH_WINDOWS)
             this._select(this._next());
         else if (action == Meta.KeyBindingAction.SWITCH_WINDOWS_BACKWARD)
             this._select(this._previous());
         else if (keysym == Clutter.KEY_Left)
-            this._select(rtl ? this._next() : this._previous());
+            this._select(this._previous());
         else if (keysym == Clutter.KEY_Right)
-            this._select(rtl ? this._previous() : this._next());
+            this._select(this._next());
         else if (keysym === Clutter.KEY_w || keysym === Clutter.KEY_W || keysym === Clutter.KEY_F4)
             this._closeWindow(this._selectedIndex);
         else
@@ -705,7 +681,8 @@ class AppSwitcher extends SwitcherPopup.SwitcherList {
             // Cache the window list now; we don't handle dynamic changes here,
             // and we don't want to be continually retrieving it
             appIcon.cachedWindows = allWindows.filter(
-                w => windowTracker.get_window_app(w) === appIcon.app);
+                w => windowTracker.get_window_app(w) == appIcon.app
+            );
             if (appIcon.cachedWindows.length > 0)
                 this._addIcon(appIcon);
         }
@@ -740,7 +717,7 @@ class AppSwitcher extends SwitcherPopup.SwitcherList {
         let iconSpacing = labelNaturalHeight + iconPadding + iconBorder;
         let totalSpacing = this._list.spacing * (this._items.length - 1);
 
-        // We just assume the whole screen here due to weirdness happening with the passed width
+        // We just assume the whole screen here due to weirdness happing with the passed width
         let primary = Main.layoutManager.primaryMonitor;
         let parentPadding = this.get_parent().get_theme_node().get_horizontal_padding();
         let availWidth = primary.width - parentPadding - this.get_theme_node().get_horizontal_padding();
@@ -773,9 +750,9 @@ class AppSwitcher extends SwitcherPopup.SwitcherList {
         return super.vfunc_get_preferred_height(forWidth);
     }
 
-    vfunc_allocate(box) {
+    vfunc_allocate(box, flags) {
         // Allocate the main list items
-        super.vfunc_allocate(box);
+        super.vfunc_allocate(box, flags);
 
         let contentBox = this.get_theme_node().get_content_box(box);
 
@@ -790,7 +767,7 @@ class AppSwitcher extends SwitcherPopup.SwitcherList {
             childBox.x2 = childBox.x1 + arrowWidth;
             childBox.y1 = contentBox.y1 + itemBox.y2 + arrowHeight;
             childBox.y2 = childBox.y1 + arrowHeight;
-            this._arrows[i].allocate(childBox);
+            this._arrows[i].allocate(childBox, flags);
         }
     }
 
@@ -917,6 +894,7 @@ class ThumbnailSwitcher extends SwitcherPopup.SwitcherList {
             } else {
                 this.addItem(box, null);
             }
+
         }
 
         this.connect('destroy', this._onDestroy.bind(this));
@@ -1082,7 +1060,7 @@ class WindowSwitcher extends SwitcherPopup.SwitcherList {
         return [minHeight, natHeight];
     }
 
-    vfunc_allocate(box) {
+    vfunc_allocate(box, flags) {
         let themeNode = this.get_theme_node();
         let contentBox = themeNode.get_content_box(box);
         const labelHeight = this._label.height;
@@ -1090,20 +1068,20 @@ class WindowSwitcher extends SwitcherPopup.SwitcherList {
             labelHeight + themeNode.get_padding(St.Side.BOTTOM);
 
         box.y2 -= totalLabelHeight;
-        super.vfunc_allocate(box);
+        super.vfunc_allocate(box, flags);
 
         // Hooking up the parent vfunc will call this.set_allocation() with
         // the height without the label height, so call it again with the
         // correct size here.
         box.y2 += totalLabelHeight;
-        this.set_allocation(box);
+        this.set_allocation(box, flags);
 
         const childBox = new Clutter.ActorBox();
         childBox.x1 = contentBox.x1;
         childBox.x2 = contentBox.x2;
         childBox.y2 = contentBox.y2;
         childBox.y1 = childBox.y2 - labelHeight;
-        this._label.allocate(childBox);
+        this._label.allocate(childBox, flags);
     }
 
     highlight(index, justOutline) {

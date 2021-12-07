@@ -1,6 +1,6 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 
-const { Clutter } = imports.gi;
+const { Clutter, Meta } = imports.gi;
 const Signals = imports.signals;
 
 const DND = imports.ui.dnd;
@@ -17,7 +17,7 @@ var XdndHandler = class {
         Main.uiGroup.add_actor(this._dummy);
         this._dummy.hide();
 
-        var dnd = global.backend.get_dnd();
+        var dnd = Meta.get_backend().get_dnd();
         dnd.connect('dnd-enter', this._onEnter.bind(this));
         dnd.connect('dnd-position-change', this._onPositionChanged.bind(this));
         dnd.connect('dnd-leave', this._onLeave.bind(this));
@@ -86,7 +86,7 @@ var XdndHandler = class {
         let dragEvent = {
             x,
             y,
-            dragActor: this._cursorWindowClone ?? this._dummy,
+            dragActor: this._cursorWindowClone ? this._cursorWindowClone : this._dummy,
             source: this,
             targetActor: pickedActor,
         };

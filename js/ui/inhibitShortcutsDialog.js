@@ -7,7 +7,7 @@ const PermissionStore = imports.misc.permissionStore;
 
 const WAYLAND_KEYBINDINGS_SCHEMA = 'org.gnome.mutter.wayland.keybindings';
 
-const APP_ALLOWLIST = ['gnome-control-center.desktop'];
+const APP_WHITELIST = ['gnome-control-center.desktop'];
 const APP_PERMISSIONS_TABLE = 'gnome';
 const APP_PERMISSIONS_ID = 'shortcuts-inhibitor';
 const GRANTED = 'GRANTED';
@@ -73,7 +73,7 @@ var InhibitShortcutsDialog = GObject.registerClass({
     }
 
     _buildLayout() {
-        const name = this._app?.get_name() ?? this._window.title;
+        let name = this._app ? this._app.get_name() : this._window.title;
 
         let content = new Dialog.MessageDialogContent({
             title: _('Allow inhibiting shortcuts'),
@@ -118,7 +118,7 @@ var InhibitShortcutsDialog = GObject.registerClass({
     }
 
     vfunc_show() {
-        if (this._app && APP_ALLOWLIST.includes(this._app.get_id())) {
+        if (this._app && APP_WHITELIST.includes(this._app.get_id())) {
             this._emitResponse(DialogResponse.ALLOW);
             return;
         }

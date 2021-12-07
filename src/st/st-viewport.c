@@ -55,7 +55,6 @@ static void st_viewport_scrollable_interface_init (StScrollableInterface *iface)
 
 enum {
   PROP_0,
-  PROP_CLIP_TO_VIEW,
   PROP_HADJUST,
   PROP_VADJUST
 };
@@ -64,7 +63,6 @@ typedef struct
 {
   StAdjustment *hadjustment;
   StAdjustment *vadjustment;
-  gboolean clip_to_view;
 } StViewportPrivate;
 
 G_DEFINE_TYPE_WITH_CODE (StViewport, st_viewport, ST_TYPE_WIDGET,
@@ -80,22 +78,6 @@ adjustment_value_notify_cb (StAdjustment *adjustment,
                             GParamSpec   *pspec,
                             StViewport   *viewport)
 {
-  static gboolean invalidate_paint_volume_valid = FALSE;
-  static void (* invalidate_paint_volume) (ClutterActor *) = NULL;
-
-  clutter_actor_invalidate_transform (CLUTTER_ACTOR (viewport));
-
-  if (!invalidate_paint_volume_valid)
-    {
-      g_module_symbol (g_module_open (NULL, G_MODULE_BIND_LAZY),
-                       "clutter_actor_invalidate_paint_volume",
-                       (gpointer *)&invalidate_paint_volume);
-      invalidate_paint_volume_valid = TRUE;
-    }
-
-  if (invalidate_paint_volume)
-    invalidate_paint_volume (CLUTTER_ACTOR (viewport));
-
   clutter_actor_queue_relayout (CLUTTER_ACTOR (viewport));
 }
 
@@ -181,27 +163,11 @@ st_viewport_scrollable_interface_init (StScrollableInterface *iface)
 }
 
 static void
-st_viewport_set_clip_to_view (StViewport *viewport,
-                              gboolean    clip_to_view)
-{
-  StViewportPrivate *priv =
-    st_viewport_get_instance_private (viewport);
-
-  if (!!priv->clip_to_view != !!clip_to_view)
-    {
-      priv->clip_to_view = clip_to_view;
-      clutter_actor_queue_redraw (CLUTTER_ACTOR (viewport));
-    }
-}
-
-static void
 st_viewport_get_property (GObject    *object,
                           guint       property_id,
                           GValue     *value,
                           GParamSpec *pspec)
 {
-  StViewportPrivate *priv =
-    st_viewport_get_instance_private (ST_VIEWPORT (object));
   StAdjustment *adjustment;
 
   switch (property_id)
@@ -214,10 +180,6 @@ st_viewport_get_property (GObject    *object,
     case PROP_VADJUST:
       scrollable_get_adjustments (ST_SCROLLABLE (object), NULL, &adjustment);
       g_value_set_object (value, adjustment);
-      break;
-
-    case PROP_CLIP_TO_VIEW:
-      g_value_set_boolean (value, priv->clip_to_view);
       break;
 
     default:
@@ -249,10 +211,6 @@ st_viewport_set_property (GObject      *object,
                                   g_value_get_object (value));
       break;
 
-    case PROP_CLIP_TO_VIEW:
-      st_viewport_set_clip_to_view (viewport, g_value_get_boolean (value));
-      break;
-
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
     }
@@ -273,7 +231,8 @@ st_viewport_dispose (GObject *object)
 
 static void
 st_viewport_allocate (ClutterActor           *actor,
-                      const ClutterActorBox  *box)
+                      const ClutterActorBox  *box,
+                      ClutterAllocationFlags  flags)
 {
   StViewport *viewport = ST_VIEWPORT (actor);
   StViewportPrivate *priv =
@@ -300,7 +259,7 @@ st_viewport_allocate (ClutterActor           *actor,
    * may not match the minimum sizes reported by the layout manager. When that
    * happens, the content box needs to be adjusted to match the reported minimum
    * sizes before being passed to clutter_layout_manager_allocate() */
-  clutter_actor_set_allocation (actor, box);
+  clutter_actor_set_allocation (actor, box, flags);
 
   content_box = viewport_box;
   if (priv->hadjustment)
@@ -309,7 +268,7 @@ st_viewport_allocate (ClutterActor           *actor,
     content_box.y2 += MAX (0, min_height - avail_height);
 
   clutter_layout_manager_allocate (layout, CLUTTER_CONTAINER (actor),
-                                   &content_box);
+                                   &content_box, flags);
 
   /* update adjustments for scrolling */
   if (priv->vadjustment)
@@ -345,45 +304,29 @@ st_viewport_allocate (ClutterActor           *actor,
     }
 }
 
-static double
-get_hadjustment_value (StViewport *viewport)
-{
-  StViewportPrivate *priv = st_viewport_get_instance_private (viewport);
-  ClutterTextDirection direction;
-  double x, upper, page_size;
-
-  if (!priv->hadjustment)
-    return 0;
-
-  st_adjustment_get_values (priv->hadjustment,
-                            &x, NULL, &upper, NULL, NULL, &page_size);
-
-  direction = clutter_actor_get_text_direction (CLUTTER_ACTOR (viewport));
-  if (direction == CLUTTER_TEXT_DIRECTION_RTL)
-    return upper - page_size - x;
-
-  return x;
-}
-
 static void
-st_viewport_apply_transform (ClutterActor      *actor,
-                             graphene_matrix_t *matrix)
+st_viewport_apply_transform (ClutterActor *actor,
+                             CoglMatrix   *matrix)
 {
   StViewport *viewport = ST_VIEWPORT (actor);
   StViewportPrivate *priv = st_viewport_get_instance_private (viewport);
   ClutterActorClass *parent_class =
     CLUTTER_ACTOR_CLASS (st_viewport_parent_class);
-  graphene_point3d_t p = GRAPHENE_POINT3D_INIT_ZERO;
-
-  if (priv->hadjustment)
-    p.x = -get_hadjustment_value (viewport);
-
-  if (priv->vadjustment)
-    p.y = -st_adjustment_get_value (priv->vadjustment);
-
-  graphene_matrix_translate (matrix, &p);
+  double x, y;
 
   parent_class->apply_transform (actor, matrix);
+
+  if (priv->hadjustment)
+    x = st_adjustment_get_value (priv->hadjustment);
+  else
+    x = 0;
+
+  if (priv->vadjustment)
+    y = st_adjustment_get_value (priv->vadjustment);
+  else
+    y = 0;
+
+  cogl_matrix_translate (matrix, (int) -x, (int) -y, 0);
 }
 
 /* If we are translated, then we need to translate back before chaining
@@ -396,7 +339,7 @@ get_border_paint_offsets (StViewport *viewport,
   StViewportPrivate *priv = st_viewport_get_instance_private (viewport);
 
   if (priv->hadjustment)
-    *x = get_hadjustment_value (viewport);
+    *x = st_adjustment_get_value (priv->hadjustment);
   else
     *x = 0;
 
@@ -446,7 +389,7 @@ st_viewport_paint (ClutterActor        *actor,
   /* The content area forms the viewport into the scrolled contents, while
    * the borders and background stay in place; after drawing the borders and
    * background, we clip to the content area */
-  if (priv->clip_to_view && (priv->hadjustment || priv->vadjustment))
+  if (priv->hadjustment || priv->vadjustment)
     {
       cogl_framebuffer_push_rectangle_clip (fb,
                                             (int)content_box.x1,
@@ -460,7 +403,7 @@ st_viewport_paint (ClutterActor        *actor,
        child = clutter_actor_get_next_sibling (child))
     clutter_actor_paint (child, paint_context);
 
-  if (priv->clip_to_view && (priv->hadjustment || priv->vadjustment))
+  if (priv->hadjustment || priv->vadjustment)
     cogl_framebuffer_pop_clip (fb);
 }
 
@@ -472,19 +415,28 @@ st_viewport_pick (ClutterActor       *actor,
   StViewportPrivate *priv = st_viewport_get_instance_private (viewport);
   StThemeNode *theme_node = st_widget_get_theme_node (ST_WIDGET (actor));
   double x, y;
-  g_autoptr (ClutterActorBox) allocation_box = NULL;
+  ClutterActorBox allocation_box;
   ClutterActorBox content_box;
   ClutterActor *child;
+  CoglFramebuffer *fb = clutter_pick_context_get_framebuffer (pick_context);
+
+  get_border_paint_offsets (viewport, &x, &y);
+  if (x != 0 || y != 0)
+    {
+      cogl_framebuffer_push_matrix (fb);
+      cogl_framebuffer_translate (fb, (int)x, (int)y, 0);
+    }
 
   CLUTTER_ACTOR_CLASS (st_viewport_parent_class)->pick (actor, pick_context);
+
+  if (x != 0 || y != 0)
+    cogl_framebuffer_pop_matrix (fb);
 
   if (clutter_actor_get_n_children (actor) == 0)
     return;
 
-  g_object_get (actor, "allocation", &allocation_box, NULL);
-  st_theme_node_get_content_box (theme_node, allocation_box, &content_box);
-
-  get_border_paint_offsets (viewport, &x, &y);
+  clutter_actor_get_allocation_box (actor, &allocation_box);
+  st_theme_node_get_content_box (theme_node, &allocation_box, &content_box);
 
   content_box.x1 += x;
   content_box.y1 += y;
@@ -492,7 +444,13 @@ st_viewport_pick (ClutterActor       *actor,
   content_box.y2 += y;
 
   if (priv->hadjustment || priv->vadjustment)
-    clutter_pick_context_push_clip (pick_context, &content_box);
+    {
+      cogl_framebuffer_push_rectangle_clip (fb,
+                                            (int)content_box.x1,
+                                            (int)content_box.y1,
+                                            (int)content_box.x2,
+                                            (int)content_box.y2);
+    }
 
   for (child = clutter_actor_get_first_child (actor);
        child != NULL;
@@ -500,7 +458,7 @@ st_viewport_pick (ClutterActor       *actor,
     clutter_actor_pick (child, pick_context);
 
   if (priv->hadjustment || priv->vadjustment)
-    clutter_pick_context_pop_clip (pick_context);
+    cogl_framebuffer_pop_clip (fb);
 }
 
 static gboolean
@@ -518,9 +476,6 @@ st_viewport_get_paint_volume (ClutterActor       *actor,
   /* Setting the paint volume does not make sense when we don't have any allocation */
   if (!clutter_actor_has_allocation (actor))
     return FALSE;
-
-  if (!priv->clip_to_view)
-    return CLUTTER_ACTOR_CLASS (st_viewport_parent_class)->get_paint_volume (actor, volume);
 
   /* When have an adjustment we are clipped to the content box, so base
    * our paint volume on that. */
@@ -602,14 +557,6 @@ st_viewport_class_init (StViewportClass *klass)
   actor_class->get_paint_volume = st_viewport_get_paint_volume;
   actor_class->pick = st_viewport_pick;
 
-  g_object_class_install_property (object_class,
-                                   PROP_CLIP_TO_VIEW,
-                                   g_param_spec_boolean ("clip-to-view",
-                                                         "Clip to view",
-                                                         "Clip to view",
-                                                         TRUE,
-                                                         ST_PARAM_READWRITE));
-
   /* StScrollable properties */
   g_object_class_override_property (object_class,
                                     PROP_HADJUST,
@@ -618,13 +565,10 @@ st_viewport_class_init (StViewportClass *klass)
   g_object_class_override_property (object_class,
                                     PROP_VADJUST,
                                     "vadjustment");
+
 }
 
 static void
 st_viewport_init (StViewport *self)
 {
-  StViewportPrivate *priv =
-    st_viewport_get_instance_private (self);
-
-  priv->clip_to_view = TRUE;
 }

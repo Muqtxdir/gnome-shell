@@ -59,7 +59,7 @@ st_shadow_new (ClutterColor *color,
 {
   StShadow *shadow;
 
-  shadow = g_new (StShadow, 1);
+  shadow = g_slice_new (StShadow);
 
   shadow->color     = *color;
   shadow->xoffset   = xoffset;
@@ -105,7 +105,7 @@ st_shadow_unref (StShadow *shadow)
   g_return_if_fail (shadow->ref_count > 0);
 
   if (g_atomic_int_dec_and_test (&shadow->ref_count))
-    g_free (shadow);
+    g_slice_free (StShadow, shadow);
 }
 
 /**
@@ -117,7 +117,7 @@ st_shadow_unref (StShadow *shadow)
  * compare non-identically if they differ only by floating point rounding
  * errors.
  *
- * Returns: %TRUE if the two shadows are identical
+ * Return value: %TRUE if the two shadows are identical
  */
 gboolean
 st_shadow_equal (StShadow *shadow,
@@ -160,7 +160,7 @@ st_shadow_get_box (StShadow              *shadow,
 
   /* Inset shadows are drawn below the border, so returning
    * the original box is not actually correct; still, it's
-   * good enough for the purpose of determining additional space
+   * good enough for the purpose of determing additional space
    * required outside the actor box.
    */
   if (shadow->inset)
@@ -210,19 +210,12 @@ st_shadow_helper_new (StShadow     *shadow)
 {
   StShadowHelper *helper;
 
-  helper = g_new0 (StShadowHelper, 1);
+  helper = g_slice_new0 (StShadowHelper);
   helper->shadow = st_shadow_ref (shadow);
 
   return helper;
 }
 
-/**
- * st_shadow_helper_update:
- * @helper: a #StShadowHelper
- * @source: a #ClutterActor
- *
- * Update @helper from @source.
- */
 void
 st_shadow_helper_update (StShadowHelper *helper,
                          ClutterActor   *source)
@@ -255,7 +248,7 @@ st_shadow_helper_copy (StShadowHelper *helper)
 {
   StShadowHelper *copy;
 
-  copy = g_new (StShadowHelper, 1);
+  copy = g_slice_new (StShadowHelper);
   *copy = *helper;
   if (copy->pipeline)
     cogl_object_ref (copy->pipeline);
@@ -277,7 +270,7 @@ st_shadow_helper_free (StShadowHelper *helper)
     cogl_object_unref (helper->pipeline);
   st_shadow_unref (helper->shadow);
 
-  g_free (helper);
+  g_slice_free (StShadowHelper, helper);
 }
 
 /**

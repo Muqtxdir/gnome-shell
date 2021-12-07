@@ -10,7 +10,6 @@ const Main = imports.ui.main;
 const Screenshot = imports.ui.screenshot;
 
 const { loadInterfaceXML } = imports.misc.fileUtils;
-const { ControlsState } = imports.ui.overviewControls;
 
 const GnomeShellIface = loadInterfaceXML('org.gnome.Shell');
 const ScreenSaverIface = loadInterfaceXML('org.gnome.ScreenSaver');
@@ -100,18 +99,19 @@ var GnomeShell = class {
     }
 
     FocusApp(id) {
-        Main.overview.selectApp(id);
+        this.ShowApplications();
+        Main.overview.viewSelector.appDisplay.selectApp(id);
     }
 
     ShowApplications() {
-        Main.overview.show(ControlsState.APP_GRID);
+        Main.overview.viewSelector.showApps();
     }
 
     GrabAcceleratorAsync(params, invocation) {
         let [accel, modeFlags, grabFlags] = params;
         let sender = invocation.get_sender();
         let bindingAction = this._grabAcceleratorForSender(accel, modeFlags, grabFlags, sender);
-        invocation.return_value(GLib.Variant.new('(u)', [bindingAction]));
+        return invocation.return_value(GLib.Variant.new('(u)', [bindingAction]));
     }
 
     GrabAcceleratorsAsync(params, invocation) {
@@ -122,7 +122,7 @@ var GnomeShell = class {
             let [accel, modeFlags, grabFlags] = accels[i];
             bindingActions.push(this._grabAcceleratorForSender(accel, modeFlags, grabFlags, sender));
         }
-        invocation.return_value(GLib.Variant.new('(au)', [bindingActions]));
+        return invocation.return_value(GLib.Variant.new('(au)', [bindingActions]));
     }
 
     UngrabAcceleratorAsync(params, invocation) {
@@ -130,7 +130,7 @@ var GnomeShell = class {
         let sender = invocation.get_sender();
         let ungrabSucceeded = this._ungrabAcceleratorForSender(action, sender);
 
-        invocation.return_value(GLib.Variant.new('(b)', [ungrabSucceeded]));
+        return invocation.return_value(GLib.Variant.new('(b)', [ungrabSucceeded]));
     }
 
     UngrabAcceleratorsAsync(params, invocation) {
@@ -141,7 +141,7 @@ var GnomeShell = class {
         for (let i = 0; i < actions.length; i++)
             ungrabSucceeded &= this._ungrabAcceleratorForSender(actions[i], sender);
 
-        invocation.return_value(GLib.Variant.new('(b)', [ungrabSucceeded]));
+        return invocation.return_value(GLib.Variant.new('(b)', [ungrabSucceeded]));
     }
 
     _emitAcceleratorActivated(action, device, timestamp) {
@@ -151,21 +151,19 @@ var GnomeShell = class {
 
         let connection = this._dbusImpl.get_connection();
         let info = this._dbusImpl.get_info();
-        let params = {
-            'timestamp': GLib.Variant.new('u', timestamp),
-            'action-mode': GLib.Variant.new('u', Main.actionMode),
-        };
+        let params = { 'device-id': GLib.Variant.new('u', device.get_device_id()),
+                       'timestamp': GLib.Variant.new('u', timestamp),
+                       'action-mode': GLib.Variant.new('u', Main.actionMode) };
 
         let deviceNode = device.get_device_node();
         if (deviceNode)
             params['device-node'] = GLib.Variant.new('s', deviceNode);
 
-        connection.emit_signal(
-            destination,
-            this._dbusImpl.get_object_path(),
-            info?.name ?? null,
-            'AcceleratorActivated',
-            GLib.Variant.new('(ua{sv})', [action, params]));
+        connection.emit_signal(destination,
+                               this._dbusImpl.get_object_path(),
+                               info ? info.name : null,
+                               'AcceleratorActivated',
+                               GLib.Variant.new('(ua{sv})', [action, params]));
     }
 
     _grabAcceleratorForSender(accelerator, modeFlags, grabFlags, sender) {
@@ -217,13 +215,11 @@ var GnomeShell = class {
         let sender = invocation.get_sender();
         let [dict] = params;
         Main.osdMonitorLabeler.show(sender, dict);
-        invocation.return_value(null);
     }
 
     HideMonitorLabelsAsync(params, invocation) {
         let sender = invocation.get_sender();
         Main.osdMonitorLabeler.hide(sender);
-        invocation.return_value(null);
     }
 
     _checkOverviewVisibleChanged() {
@@ -369,8 +365,7 @@ var ScreenSaverDBus = class {
         this._dbusImpl = Gio.DBusExportedObject.wrapJSObject(ScreenSaverIface, this);
         this._dbusImpl.export(Gio.DBus.session, '/org/gnome/ScreenSaver');
 
-        Gio.DBus.session.own_name('org.gnome.Shell.ScreenShield',
-            Gio.BusNameOwnerFlags.NONE, null, null);
+        Gio.DBus.session.own_name('org.gnome.ScreenSaver', Gio.BusNameOwnerFlags.REPLACE, null, null);
     }
 
     LockAsync(parameters, invocation) {

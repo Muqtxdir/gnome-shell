@@ -42,6 +42,9 @@ typedef struct _StBinPrivate          StBinPrivate;
 struct _StBinPrivate
 {
   ClutterActor *child;
+
+  guint         x_fill : 1;
+  guint         y_fill : 1;
 };
 
 enum
@@ -49,6 +52,8 @@ enum
   PROP_0,
 
   PROP_CHILD,
+  PROP_X_FILL,
+  PROP_Y_FILL,
 
   N_PROPS
 };
@@ -110,11 +115,12 @@ get_align_factor (ClutterActorAlign align)
 
 static void
 st_bin_allocate (ClutterActor          *self,
-                 const ClutterActorBox *box)
+                 const ClutterActorBox *box,
+                 ClutterAllocationFlags flags)
 {
   StBinPrivate *priv = st_bin_get_instance_private (ST_BIN (self));
 
-  clutter_actor_set_allocation (self, box);
+  clutter_actor_set_allocation (self, box, flags);
 
   if (priv->child && clutter_actor_is_visible (priv->child))
     {
@@ -128,7 +134,8 @@ st_bin_allocate (ClutterActor          *self,
                                          get_align_factor (x_align),
                                          get_align_factor (y_align),
                                          x_align == CLUTTER_ACTOR_ALIGN_FILL,
-                                         y_align == CLUTTER_ACTOR_ALIGN_FILL);
+                                         y_align == CLUTTER_ACTOR_ALIGN_FILL,
+                                         flags);
     }
 }
 
@@ -253,11 +260,24 @@ st_bin_set_property (GObject      *gobject,
                      GParamSpec   *pspec)
 {
   StBin *bin = ST_BIN (gobject);
+  StBinPrivate *priv = st_bin_get_instance_private (bin);
 
   switch (prop_id)
     {
     case PROP_CHILD:
       st_bin_set_child (bin, g_value_get_object (value));
+      break;
+
+    case PROP_X_FILL:
+      st_bin_set_fill (bin,
+                       g_value_get_boolean (value),
+                       priv->y_fill);
+      break;
+
+    case PROP_Y_FILL:
+      st_bin_set_fill (bin,
+                       priv->x_fill,
+                       g_value_get_boolean (value));
       break;
 
     default:
@@ -277,6 +297,14 @@ st_bin_get_property (GObject    *gobject,
     {
     case PROP_CHILD:
       g_value_set_object (value, priv->child);
+      break;
+
+    case PROP_X_FILL:
+      g_value_set_boolean (value, priv->x_fill);
+      break;
+
+    case PROP_Y_FILL:
+      g_value_set_boolean (value, priv->y_fill);
       break;
 
     default:
@@ -314,6 +342,32 @@ st_bin_class_init (StBinClass *klass)
                          CLUTTER_TYPE_ACTOR,
                          ST_PARAM_READWRITE);
 
+  /**
+   * StBin:x-fill:
+   *
+   * Whether the child should fill the horizontal allocation
+   */
+  props[PROP_X_FILL] =
+    g_param_spec_boolean ("x-fill",
+                          "X Fill",
+                          "Whether the child should fill the "
+                          "horizontal allocation",
+                          FALSE,
+                          ST_PARAM_READWRITE | G_PARAM_DEPRECATED);
+
+  /**
+   * StBin:y-fill:
+   *
+   * Whether the child should fill the vertical allocation
+   */
+  props[PROP_Y_FILL] =
+    g_param_spec_boolean ("y-fill",
+                          "Y Fill",
+                          "Whether the child should fill the "
+                          "vertical allocation",
+                          FALSE,
+                          ST_PARAM_READWRITE | G_PARAM_DEPRECATED);
+
   g_object_class_install_properties (gobject_class, N_PROPS, props);
 }
 
@@ -327,7 +381,7 @@ st_bin_init (StBin *bin)
  *
  * Creates a new #StBin, a simple container for one child.
  *
- * Returns: the newly created #StBin actor
+ * Return value: the newly created #StBin actor
  */
 StWidget *
 st_bin_new (void)
@@ -391,9 +445,9 @@ st_bin_set_child (StBin        *bin,
  * st_bin_get_child:
  * @bin: a #StBin
  *
- * Gets the #ClutterActor child for @bin.
+ * Retrieves a pointer to the child of @bin.
  *
- * Returns: (transfer none) (nullable): a #ClutterActor, or %NULL
+ * Return value: (transfer none): a #ClutterActor, or %NULL
  */
 ClutterActor *
 st_bin_get_child (StBin *bin)
@@ -401,4 +455,69 @@ st_bin_get_child (StBin *bin)
   g_return_val_if_fail (ST_IS_BIN (bin), NULL);
 
   return ((StBinPrivate *)st_bin_get_instance_private (bin))->child;
+}
+
+/**
+ * st_bin_set_fill:
+ * @bin: a #StBin
+ * @x_fill: %TRUE if the child should fill horizontally the @bin
+ * @y_fill: %TRUE if the child should fill vertically the @bin
+ *
+ * Sets whether the child of @bin should fill out the horizontal
+ * and/or vertical allocation of the parent
+ */
+void
+st_bin_set_fill (StBin   *bin,
+                 gboolean x_fill,
+                 gboolean y_fill)
+{
+  StBinPrivate *priv;
+
+  g_return_if_fail (ST_IS_BIN (bin));
+
+  priv = st_bin_get_instance_private (bin);
+
+  g_object_freeze_notify (G_OBJECT (bin));
+
+  if (priv->x_fill != x_fill)
+    {
+      priv->x_fill = x_fill;
+
+      g_object_notify_by_pspec (G_OBJECT (bin), props[PROP_X_FILL]);
+    }
+
+  if (priv->y_fill != y_fill)
+    {
+      priv->y_fill = y_fill;
+
+      g_object_notify_by_pspec (G_OBJECT (bin), props[PROP_Y_FILL]);
+    }
+
+  g_object_thaw_notify (G_OBJECT (bin));
+}
+
+/**
+ * st_bin_get_fill:
+ * @bin: a #StBin
+ * @x_fill: (out): return location for the horizontal fill, or %NULL
+ * @y_fill: (out): return location for the vertical fill, or %NULL
+ *
+ * Retrieves the horizontal and vertical fill settings
+ */
+void
+st_bin_get_fill (StBin    *bin,
+                 gboolean *x_fill,
+                 gboolean *y_fill)
+{
+  StBinPrivate *priv;
+
+  g_return_if_fail (ST_IS_BIN (bin));
+
+  priv = st_bin_get_instance_private (bin);
+
+  if (x_fill)
+    *x_fill = priv->x_fill;
+
+  if (y_fill)
+    *y_fill = priv->y_fill;
 }

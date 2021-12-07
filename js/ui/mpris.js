@@ -2,6 +2,7 @@
 const { Gio, GObject, Shell, St } = imports.gi;
 const Signals = imports.signals;
 
+const Calendar = imports.ui.calendar;
 const Main = imports.ui.main;
 const MessageList = imports.ui.messageList;
 
@@ -27,10 +28,6 @@ class MediaMessage extends MessageList.Message {
 
         this._icon = new St.Icon({ style_class: 'media-message-cover-icon' });
         this.setIcon(this._icon);
-
-        // reclaim space used by unused elements
-        this._secondaryBin.hide();
-        this._closeButton.hide();
 
         this._prevButton = this.addMediaControl('media-skip-backward-symbolic',
             () => {
@@ -70,8 +67,8 @@ class MediaMessage extends MessageList.Message {
     }
 
     _update() {
-        this.setTitle(this._player.trackTitle);
-        this.setBody(this._player.trackArtists.join(', '));
+        this.setTitle(this._player.trackArtists.join(', '));
+        this.setBody(this._player.trackTitle);
 
         if (this._player.trackCoverUrl) {
             let file = Gio.File.new_for_uri(this._player.trackCoverUrl);
@@ -253,6 +250,10 @@ class MediaSection extends MessageList.MessageListSection {
                                     'org.freedesktop.DBus',
                                     '/org/freedesktop/DBus',
                                     this._onProxyReady.bind(this));
+    }
+
+    _shouldShow() {
+        return !this.empty && Calendar.isToday(this._date);
     }
 
     get allowed() {

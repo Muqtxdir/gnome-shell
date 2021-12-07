@@ -2,7 +2,6 @@
 /* exported Component */
 
 const { Clutter, Gio, GLib, GObject, NM, Pango, Shell, St } = imports.gi;
-const ByteArray = imports.byteArray;
 const Signals = imports.signals;
 
 const Dialog = imports.ui.dialog;
@@ -11,7 +10,6 @@ const MessageTray = imports.ui.messageTray;
 const ModalDialog = imports.ui.modalDialog;
 const ShellEntry = imports.ui.shellEntry;
 
-Gio._promisify(Shell.NetworkAgent.prototype, 'init_async', 'init_finish');
 Gio._promisify(Shell.NetworkAgent.prototype,
     'search_vpn_plugin', 'search_vpn_plugin_finish');
 
@@ -132,12 +130,8 @@ class NetworkSecretDialog extends ModalDialog.ModalDialog {
         for (let i = 0; i < this._content.secrets.length; i++) {
             let secret = this._content.secrets[i];
             valid = valid && secret.valid;
-            if (secret.key !== null) {
-                if (this._settingName === 'vpn')
-                    this._agent.add_vpn_secret(this._requestId, secret.key, secret.value);
-                else
-                    this._agent.set_password(this._requestId, secret.key, secret.value);
-            }
+            if (secret.key != null)
+                this._agent.set_password(this._requestId, secret.key, secret.value);
         }
 
         if (valid) {
@@ -480,7 +474,7 @@ var VPNRequestHandler = class {
                     this._stdin.write('QUIT\n\n', null);
                 } catch (e) { /* ignore broken pipe errors */ }
             } else {
-                this._agent.add_vpn_secret(this._requestId, this._previousLine, line);
+                this._agent.set_password(this._requestId, this._previousLine, line);
                 this._previousLine = undefined;
             }
         } else {
@@ -488,37 +482,39 @@ var VPNRequestHandler = class {
         }
     }
 
-    async _readStdoutOldStyle() {
-        const [line, len_] =
-            await this._dataStdout.read_line_async(GLib.PRIORITY_DEFAULT, null);
+    _readStdoutOldStyle() {
+        this._dataStdout.read_line_async(GLib.PRIORITY_DEFAULT, null, (stream, result) => {
+            let [line, len_] = this._dataStdout.read_line_finish_utf8(result);
 
-        if (line === null) {
-            // end of file
-            this._stdout.close(null);
-            return;
-        }
+            if (line == null) {
+                // end of file
+                this._stdout.close(null);
+                return;
+            }
 
-        this._vpnChildProcessLineOldStyle(ByteArray.toString(line));
+            this._vpnChildProcessLineOldStyle(line);
 
-        // try to read more!
-        this._readStdoutOldStyle();
+            // try to read more!
+            this._readStdoutOldStyle();
+        });
     }
 
-    async _readStdoutNewStyle() {
-        const cnt =
-            await this._dataStdout.fill_async(-1, GLib.PRIORITY_DEFAULT, null);
+    _readStdoutNewStyle() {
+        this._dataStdout.fill_async(-1, GLib.PRIORITY_DEFAULT, null, (stream, result) => {
+            let cnt = this._dataStdout.fill_finish(result);
 
-        if (cnt === 0) {
-            // end of file
-            this._showNewStyleDialog();
+            if (cnt == 0) {
+                // end of file
+                this._showNewStyleDialog();
 
-            this._stdout.close(null);
-            return;
-        }
+                this._stdout.close(null);
+                return;
+            }
 
-        // Try to read more
-        this._dataStdout.set_buffer_size(2 * this._dataStdout.get_buffer_size());
-        this._readStdoutNewStyle();
+            // Try to read more
+            this._dataStdout.set_buffer_size(2 * this._dataStdout.get_buffer_size());
+            this._readStdoutNewStyle();
+        });
     }
 
     _showNewStyleDialog() {
@@ -527,7 +523,13 @@ var VPNRequestHandler = class {
         let contentOverride;
 
         try {
-            data = ByteArray.toGBytes(this._dataStdout.peek_buffer());
+            data = this._dataStdout.peek_buffer();
+
+            if (data instanceof Uint8Array)
+                data = imports.byteArray.toGBytes(data);
+            else
+                data = data.toGBytes();
+
             keyfile.load_from_bytes(data, GLib.KeyFileFlags.NONE);
 
             if (keyfile.get_integer(VPN_UI_GROUP, 'Version') != 2)
@@ -556,7 +558,7 @@ var VPNRequestHandler = class {
                     if (!value.length) // Ignore empty secrets
                         continue;
 
-                    this._agent.add_vpn_secret(this._requestId, groups[i], value);
+                    this._agent.set_password(this._requestId, groups[i], value);
                 }
             }
         } catch (e) {
@@ -619,17 +621,15 @@ var NetworkAgent = class {
         this._native.connect('cancel-request', this._cancelRequest.bind(this));
 
         this._initialized = false;
-        this._initNative();
-    }
-
-    async _initNative() {
-        try {
-            await this._native.init_async(GLib.PRIORITY_DEFAULT, null);
-            this._initialized = true;
-        } catch (e) {
-            this._native = null;
-            logError(e, 'error initializing the NetworkManager Agent');
-        }
+        this._native.init_async(GLib.PRIORITY_DEFAULT, null, (o, res) => {
+            try {
+                this._native.init_finish(res);
+                this._initialized = true;
+            } catch (e) {
+                this._native = null;
+                logError(e, 'error initializing the NetworkManager Agent');
+            }
+        });
     }
 
     enable() {
@@ -682,11 +682,11 @@ var NetworkAgent = class {
         }
         case '802-3-ethernet':
             title = _("Wired 802.1X authentication");
-            body = _('A password is required to connect to “%s”.').format(connection.get_id());
+            body = _("A password is required to connect to “%s”.".format(connection.get_id()));
             break;
         case 'pppoe':
             title = _("DSL authentication");
-            body = _('A password is required to connect to “%s”.').format(connection.get_id());
+            body = _("A password is required to connect to “%s”.".format(connection.get_id()));
             break;
         case 'gsm':
             if (hints.includes('pin')) {
@@ -797,7 +797,7 @@ var NetworkAgent = class {
         }
 
         const prop = plugin.lookup_property('GNOME', 'supports-external-ui-mode');
-        const trimmedProp = prop?.trim().toLowerCase() ?? '';
+        const trimmedProp = prop ? prop.trim().toLowerCase() : '';
 
         return {
             fileName,

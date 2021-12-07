@@ -90,7 +90,6 @@ class Avatar extends St.Bin {
 
         if (iconFile) {
             this.child = null;
-            this.add_style_class_name('user-avatar');
             this.style = `
                 background-image: url("${iconFile}");
                 background-size: cover;`;
@@ -145,31 +144,27 @@ class UserWidgetLabel extends St.Widget {
         }
     }
 
-    vfunc_allocate(box) {
-        this.set_allocation(box);
+    vfunc_allocate(box, flags) {
+        this.set_allocation(box, flags);
 
         let availWidth = box.x2 - box.x1;
         let availHeight = box.y2 - box.y1;
 
         let [, , natRealNameWidth] = this._realNameLabel.get_preferred_size();
 
-        let childBox = new Clutter.ActorBox();
-
-        let hiddenLabel;
-        if (natRealNameWidth <= availWidth) {
+        if (natRealNameWidth <= availWidth)
             this._currentLabel = this._realNameLabel;
-            hiddenLabel = this._userNameLabel;
-        } else {
+        else
             this._currentLabel = this._userNameLabel;
-            hiddenLabel = this._realNameLabel;
-        }
         this.label_actor = this._currentLabel;
 
-        hiddenLabel.allocate(childBox);
+        let childBox = new Clutter.ActorBox();
+        childBox.x1 = 0;
+        childBox.y1 = 0;
+        childBox.x2 = availWidth;
+        childBox.y2 = availHeight;
 
-        childBox.set_size(availWidth, availHeight);
-
-        this._currentLabel.allocate(childBox);
+        this._currentLabel.allocate(childBox, flags);
     }
 
     vfunc_paint(paintContext) {
@@ -227,6 +222,7 @@ class UserWidget extends St.BoxLayout {
                 opacity: 0,
             });
             this.add_child(this._label);
+
         }
 
         this._updateUser();

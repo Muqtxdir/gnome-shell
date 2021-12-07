@@ -3,10 +3,10 @@
             ctrlAltTabManager, padOsdService, osdWindowManager,
             osdMonitorLabeler, shellMountOpDBusService, shellDBusService,
             shellAccessDialogDBusService, shellAudioSelectionDBusService,
-            screenSaverDBus, uiGroup, magnifier, xdndHandler, keyboard,
-            kbdA11yDialog, introspectService, start, pushModal, popModal,
-            activateWindow, createLookingGlass, initializeDeferredWork,
-            getThemeStylesheet, setThemeStylesheet */
+            screenSaverDBus, screencastService, uiGroup, magnifier,
+            xdndHandler, keyboard, kbdA11yDialog, introspectService,
+            start, pushModal, popModal, activateWindow, createLookingGlass,
+            initializeDeferredWork, getThemeStylesheet, setThemeStylesheet */
 
 const { Clutter, Gio, GLib, GObject, Meta, Shell, St } = imports.gi;
 
@@ -29,12 +29,12 @@ const PadOsd = imports.ui.padOsd;
 const Panel = imports.ui.panel;
 const Params = imports.misc.params;
 const RunDialog = imports.ui.runDialog;
-const WelcomeDialog = imports.ui.welcomeDialog;
 const Layout = imports.ui.layout;
 const LoginManager = imports.misc.loginManager;
 const LookingGlass = imports.ui.lookingGlass;
 const NotificationDaemon = imports.ui.notificationDaemon;
 const WindowAttentionHandler = imports.ui.windowAttentionHandler;
+const Screencast = imports.ui.screencast;
 const ScreenShield = imports.ui.screenShield;
 const Scripting = imports.ui.scripting;
 const SessionMode = imports.ui.sessionMode;
@@ -46,14 +46,9 @@ const XdndHandler = imports.ui.xdndHandler;
 const KbdA11yDialog = imports.ui.kbdA11yDialog;
 const LocatePointer = imports.ui.locatePointer;
 const PointerA11yTimeout = imports.ui.pointerA11yTimeout;
-const ParentalControlsManager = imports.misc.parentalControlsManager;
-const Config = imports.misc.config;
-const Util = imports.misc.util;
 
-const WELCOME_DIALOG_LAST_SHOWN_VERSION = 'welcome-dialog-last-shown-version';
-// Make sure to mention the point release, otherwise it will show every time
-// until this version is current
-const WELCOME_DIALOG_LAST_TOUR_CHANGE = '40.beta';
+const A11Y_SCHEMA = 'org.gnome.desktop.a11y.keyboard';
+const STICKY_KEYS_ENABLE = 'stickykeys-enable';
 const LOG_DOMAIN = 'GNOME Shell';
 const GNOMESHELL_STARTED_MESSAGE_ID = 'f3ea493c22934e26811cd62abe8e203a';
 
@@ -63,7 +58,6 @@ var panel = null;
 var overview = null;
 var runDialog = null;
 var lookingGlass = null;
-var welcomeDialog = null;
 var wm = null;
 var messageTray = null;
 var screenShield = null;
@@ -79,6 +73,7 @@ var shellAudioSelectionDBusService = null;
 var shellDBusService = null;
 var shellMountOpDBusService = null;
 var screenSaverDBus = null;
+var screencastService = null;
 var modalCount = 0;
 var actionMode = Shell.ActionMode.NONE;
 var modalActorFocusStack = [];
@@ -94,19 +89,12 @@ var locatePointer = null;
 let _startDate;
 let _defaultCssStylesheet = null;
 let _cssStylesheet = null;
+let _a11ySettings = null;
 let _themeResource = null;
 let _oskResource = null;
 
-// Redefine _LocalFilePrototype in case it points to the wrong prototype.
-// See https://gitlab.gnome.org/GNOME/gjs/-/merge_requests/595
-const localFileGType = GObject.type_from_name('GLocalFile');
-if (Gio._LocalFilePrototype.constructor.$gtype !== localFileGType)
-    Gio._LocalFilePrototype = Gio.File.new_for_path('/').constructor.prototype;
-
 Gio._promisify(Gio._LocalFilePrototype, 'delete_async', 'delete_finish');
 Gio._promisify(Gio._LocalFilePrototype, 'touch_async', 'touch_finish');
-
-let _remoteAccessInhibited = false;
 
 function _sessionUpdated() {
     if (sessionMode.isPrimary)
@@ -131,19 +119,6 @@ function _sessionUpdated() {
             runDialog.close();
         if (lookingGlass)
             lookingGlass.close();
-        if (welcomeDialog)
-            welcomeDialog.close();
-    }
-
-    let remoteAccessController = global.backend.get_remote_access_controller();
-    if (remoteAccessController) {
-        if (sessionMode.allowScreencast && _remoteAccessInhibited) {
-            remoteAccessController.uninhibit_remote_access();
-            _remoteAccessInhibited = false;
-        } else if (!sessionMode.allowScreencast && !_remoteAccessInhibited) {
-            remoteAccessController.inhibit_remote_access();
-            _remoteAccessInhibited = true;
-        }
     }
 
     if (!GLib.getenv("SHELL_DEBUG"))
@@ -152,8 +127,8 @@ function _sessionUpdated() {
 
 function start() {
     // These are here so we don't break compatibility.
-    global.logError = globalThis.log;
-    global.log = globalThis.log;
+    global.logError = window.log;
+    global.log = window.log;
 
     // Chain up async errors reported from C
     global.connect('notify-error', (global, msg, detail) => {
@@ -168,10 +143,6 @@ function start() {
     sessionMode.connect('updated', _sessionUpdated);
 
     St.Settings.get().connect('notify::gtk-theme', _loadDefaultStylesheet);
-
-    // Initialize ParentalControlsManager before the UI
-    ParentalControlsManager.getDefault();
-
     _initializeUI();
 
     shellAccessDialogDBusService = new AccessDialog.AccessDialogDBus();
@@ -214,6 +185,7 @@ function _initializeUI() {
     uiGroup = layoutManager.uiGroup;
 
     padOsdService = new PadOsd.PadOsdService();
+    screencastService = new Screencast.ScreencastService();
     xdndHandler = new XdndHandler.XdndHandler();
     ctrlAltTabManager = new CtrlAltTab.CtrlAltTabManager();
     osdWindowManager = new OsdWindow.OsdWindowManager();
@@ -243,6 +215,13 @@ function _initializeUI() {
     overview.init();
 
     new PointerA11yTimeout.PointerA11yTimeout();
+
+    _a11ySettings = new Gio.Settings({ schema_id: A11Y_SCHEMA });
+
+    global.display.connect('overlay-key', () => {
+        if (!_a11ySettings.get_boolean(STICKY_KEYS_ENABLE))
+            overview.toggle();
+    });
 
     global.connect('locate-pointer', () => {
         locatePointer.show();
@@ -302,8 +281,6 @@ function _initializeUI() {
         if (credentials.get_unix_user() === 0) {
             notify(_('Logged in as a privileged user'),
                    _('Running a session as a privileged user should be avoided for security reasons. If possible, you should log in as a normal user.'));
-        } else if (sessionMode.showWelcomeDialog) {
-            _handleShowWelcomeScreen();
         }
 
         if (sessionMode.currentMode !== 'gdm' &&
@@ -319,14 +296,6 @@ function _initializeUI() {
             Scripting.runPerfScript(module, perfOutput);
         }
     });
-}
-
-function _handleShowWelcomeScreen() {
-    const lastShownVersion = global.settings.get_string(WELCOME_DIALOG_LAST_SHOWN_VERSION);
-    if (Util.GNOMEversionCompare(WELCOME_DIALOG_LAST_TOUR_CHANGE, lastShownVersion) > 0) {
-        openWelcomeDialog();
-        global.settings.set_string(WELCOME_DIALOG_LAST_SHOWN_VERSION, Config.PACKAGE_VERSION);
-    }
 }
 
 async function _handleLockScreenWarning() {
@@ -671,13 +640,6 @@ function openRunDialog() {
     runDialog.open();
 }
 
-function openWelcomeDialog() {
-    if (welcomeDialog === null)
-        welcomeDialog = new WelcomeDialog.WelcomeDialog();
-
-    welcomeDialog.open();
-}
-
 /**
  * activateWindow:
  * @param {Meta.Window} window: the window to activate
@@ -850,7 +812,7 @@ function showRestartMessage(message) {
 
 var AnimationsSettings = class {
     constructor() {
-        let backend = global.backend;
+        let backend = Meta.get_backend();
         if (!backend.is_rendering_hardware_accelerated()) {
             St.Settings.get().inhibit_animations();
             return;

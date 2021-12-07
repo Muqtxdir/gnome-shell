@@ -231,12 +231,9 @@ st_icon_style_changed (StWidget *widget)
 }
 
 static void
-st_icon_resource_scale_changed (ClutterActor *actor)
+st_icon_resource_scale_changed (StWidget *widget)
 {
-  st_icon_update (ST_ICON (actor));
-
-  if (CLUTTER_ACTOR_CLASS (st_icon_parent_class)->resource_scale_changed)
-    CLUTTER_ACTOR_CLASS (st_icon_parent_class)->resource_scale_changed (actor);
+  st_icon_update (ST_ICON (widget));
 }
 
 static void
@@ -253,13 +250,8 @@ st_icon_class_init (StIconClass *klass)
   actor_class->paint = st_icon_paint;
 
   widget_class->style_changed = st_icon_style_changed;
-  actor_class->resource_scale_changed = st_icon_resource_scale_changed;
+  widget_class->resource_scale_changed = st_icon_resource_scale_changed;
 
-  /**
-   * StIcon:gicon:
-   *
-   * The #GIcon being displayed by this #StIcon.
-   */
   props[PROP_GICON] =
     g_param_spec_object ("gicon",
                          "GIcon",
@@ -267,11 +259,6 @@ st_icon_class_init (StIconClass *klass)
                          G_TYPE_ICON,
                          ST_PARAM_READWRITE);
 
-  /**
-   * StIcon:fallback-gicon:
-   *
-   * The fallback #GIcon to display if #StIcon:gicon fails to load.
-   */
   props[PROP_FALLBACK_GICON] =
     g_param_spec_object ("fallback-gicon",
                          "Fallback GIcon",
@@ -279,11 +266,6 @@ st_icon_class_init (StIconClass *klass)
                          G_TYPE_ICON,
                          ST_PARAM_READWRITE);
 
-  /**
-   * StIcon:icon-name:
-   *
-   * The name of the icon if the icon being displayed is a #GThemedIcon.
-   */
   props[PROP_ICON_NAME] =
     g_param_spec_string ("icon-name",
                          "Icon name",
@@ -291,12 +273,6 @@ st_icon_class_init (StIconClass *klass)
                          NULL,
                          ST_PARAM_READWRITE);
 
-  /**
-   * StIcon:icon-size:
-   *
-   * The size of the icon, if greater than `0`. Other the icon size is derived
-   * from the current style.
-   */
   props[PROP_ICON_SIZE] =
     g_param_spec_int ("icon-size",
                       "Icon size",
@@ -304,12 +280,6 @@ st_icon_class_init (StIconClass *klass)
                       -1, G_MAXINT, -1,
                       ST_PARAM_READWRITE);
 
-  /**
-   * StIcon:fallback-icon-name:
-   *
-   * The fallback icon name of the #StIcon. See st_icon_set_fallback_icon_name()
-   * for details.
-   */
   props[PROP_FALLBACK_ICON_NAME] =
     g_param_spec_string ("fallback-icon-name",
                          "Fallback icon name",
@@ -359,8 +329,7 @@ st_icon_update_shadow_pipeline (StIcon *icon)
       ClutterActorBox box;
       float width, height;
 
-      clutter_actor_get_allocation_box (CLUTTER_ACTOR (priv->icon_texture),
-                                        &box);
+      clutter_actor_get_allocation_box (CLUTTER_ACTOR (icon), &box);
       clutter_actor_box_get_size (&box, &width, &height);
 
       if (priv->shadow_pipeline == NULL ||
@@ -456,11 +425,12 @@ st_icon_update (StIcon *icon)
       return;
     }
 
+  if (!st_widget_get_resource_scale (ST_WIDGET (icon), &resource_scale))
+    return;
+
   theme_node = st_widget_peek_theme_node (ST_WIDGET (icon));
   if (theme_node == NULL)
     return;
-
-  resource_scale = clutter_actor_get_resource_scale (CLUTTER_ACTOR (icon));
 
   stage = clutter_actor_get_stage (CLUTTER_ACTOR (icon));
   context = st_theme_context_get_for_stage (CLUTTER_STAGE (stage));
@@ -552,7 +522,7 @@ st_icon_update_icon_size (StIcon *icon)
 /**
  * st_icon_new:
  *
- * Create a newly allocated #StIcon.
+ * Create a newly allocated #StIcon
  *
  * Returns: A newly allocated #StIcon
  */
@@ -566,10 +536,10 @@ st_icon_new (void)
  * st_icon_get_icon_name:
  * @icon: an #StIcon
  *
- * This is a convenience method to get the icon name of the current icon, if it
- * is currenyly a #GThemedIcon, or %NULL otherwise.
+ * This is a convenience method to get the icon name of the #GThemedIcon that
+ * is currently set.
  *
- * Returns: (transfer none) (nullable): The name of the icon or %NULL
+ * Returns: (transfer none): The name of the icon or %NULL if no icon is set
  */
 const gchar *
 st_icon_get_icon_name (StIcon *icon)
@@ -620,7 +590,7 @@ st_icon_set_icon_name (StIcon      *icon,
  *
  * Gets the current #GIcon in use.
  *
- * Returns: (nullable) (transfer none): The current #GIcon, if set, otherwise %NULL
+ * Returns: (transfer none): The current #GIcon, if set, otherwise %NULL
  */
 GIcon *
 st_icon_get_gicon (StIcon *icon)

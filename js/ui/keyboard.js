@@ -1,20 +1,18 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 /* exported KeyboardManager */
 
-const { Clutter, Gio, GLib, GObject, Graphene, Meta, Shell, St } = imports.gi;
-const ByteArray = imports.byteArray;
+const { Clutter, Gio, GLib, GObject, Meta, St } = imports.gi;
 const Signals = imports.signals;
 
-const EdgeDragAction = imports.ui.edgeDragAction;
 const InputSourceManager = imports.ui.status.keyboard;
 const IBusManager = imports.misc.ibusManager;
 const BoxPointer = imports.ui.boxpointer;
+const Layout = imports.ui.layout;
 const Main = imports.ui.main;
 const PageIndicators = imports.ui.pageIndicators;
 const PopupMenu = imports.ui.popupMenu;
 
-var KEYBOARD_ANIMATION_TIME = 150;
-var KEYBOARD_REST_TIME = KEYBOARD_ANIMATION_TIME * 2;
+var KEYBOARD_REST_TIME = Layout.KEYBOARD_ANIMATION_TIME * 2;
 var KEY_LONG_PRESS_TIME = 250;
 var PANEL_SWITCH_ANIMATION_TIME = 500;
 var PANEL_SWITCH_RELATIVE_DISTANCE = 1 / 3; /* A third of the actor width */
@@ -81,7 +79,7 @@ class AspectContainer extends St.Widget {
         return [min, nat];
     }
 
-    vfunc_allocate(box) {
+    vfunc_allocate(box, flags) {
         if (box.get_width() > 0 && box.get_height() > 0) {
             let sizeRatio = box.get_width() / box.get_height();
 
@@ -99,7 +97,7 @@ class AspectContainer extends St.Widget {
             }
         }
 
-        super.vfunc_allocate(box);
+        super.vfunc_allocate(box, flags);
     }
 });
 
@@ -198,7 +196,7 @@ class Suggestions extends St.BoxLayout {
     add(word, callback) {
         let button = new St.Button({ label: word });
         button.connect('clicked', callback);
-        this.add_child(button);
+        this.add(button);
     }
 
     clear() {
@@ -296,6 +294,7 @@ var Key = GObject.registerClass({
 
         this._capturedEventId = 0;
         this._unmapId = 0;
+        this._longPress = false;
     }
 
     _onDestroy() {
@@ -326,26 +325,27 @@ var Key = GObject.registerClass({
     }
 
     _getKeyval(key) {
-        let unicode = key.length ? key.charCodeAt(0) : undefined;
+        let unicode = key.charCodeAt(0);
         return Clutter.unicode_to_keysym(unicode);
     }
 
     _press(key) {
         this.emit('activated');
 
-        if (this._extendedKeys.length === 0)
+        if (key !== this.key || this._extendedKeys.length === 0)
             this.emit('pressed', this._getKeyval(key), key);
 
         if (key == this.key) {
             this._pressTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
                 KEY_LONG_PRESS_TIME,
                 () => {
+                    this._longPress = true;
                     this._pressTimeoutId = 0;
 
                     this.emit('long-press');
 
                     if (this._extendedKeys.length > 0) {
-                        this._touchPressSlot = null;
+                        this._touchPressed = false;
                         this._ensureExtendedKeysPopup();
                         this.keyButton.set_hover(false);
                         this.keyButton.fake_release();
@@ -363,11 +363,12 @@ var Key = GObject.registerClass({
             this._pressTimeoutId = 0;
         }
 
-        if (this._extendedKeys.length > 0)
+        if (!this._longPress && key === this.key && this._extendedKeys.length > 0)
             this.emit('pressed', this._getKeyval(key), key);
 
         this.emit('released', this._getKeyval(key), key);
         this._hideSubkeys();
+        this._longPress = false;
     }
 
     cancel() {
@@ -375,7 +376,7 @@ var Key = GObject.registerClass({
             GLib.source_remove(this._pressTimeoutId);
             this._pressTimeoutId = 0;
         }
-        this._touchPressSlot = null;
+        this._touchPressed = false;
         this.keyButton.set_hover(false);
         this.keyButton.fake_release();
     }
@@ -456,19 +457,14 @@ var Key = GObject.registerClass({
             if (!Meta.is_wayland_compositor())
                 return Clutter.EVENT_PROPAGATE;
 
-            const slot = event.get_event_sequence().get_slot();
-
-            if (!this._touchPressSlot &&
+            if (!this._touchPressed &&
                 event.type() == Clutter.EventType.TOUCH_BEGIN) {
-                this._touchPressSlot = slot;
+                this._touchPressed = true;
                 this._press(key);
-            } else if (event.type() === Clutter.EventType.TOUCH_END) {
-                if (!this._touchPressSlot ||
-                    this._touchPressSlot === slot)
-                    this._release(key);
-
-                if (this._touchPressSlot === slot)
-                    this._touchPressSlot = null;
+            } else if (this._touchPressed &&
+                       event.type() == Clutter.EventType.TOUCH_END) {
+                this._touchPressed = false;
+                this._release(key);
             }
             return Clutter.EVENT_PROPAGATE;
         });
@@ -536,7 +532,8 @@ var KeyboardModel = class {
     _loadModel(groupName) {
         let file = Gio.File.new_for_uri('resource:///org/gnome/shell/osk-layouts/%s.json'.format(groupName));
         let [success_, contents] = file.load_contents(null);
-        contents = ByteArray.toString(contents);
+        if (contents instanceof Uint8Array)
+            contents = imports.byteArray.toString(contents);
 
         return JSON.parse(contents);
     }
@@ -552,59 +549,40 @@ var KeyboardModel = class {
 
 var FocusTracker = class {
     constructor() {
+        this._currentWindow = null;
         this._rect = null;
 
-        this._notifyFocusId = global.display.connect('notify::focus-window', () => {
+        global.display.connect('notify::focus-window', () => {
             this._setCurrentWindow(global.display.focus_window);
             this.emit('window-changed', this._currentWindow);
         });
 
-        this._setCurrentWindow(global.display.focus_window);
-
-        this._grabOpBeginId = global.display.connect('grab-op-begin', (display, window, op) => {
+        global.display.connect('grab-op-begin', (display, window, op) => {
             if (window == this._currentWindow &&
                 (op == Meta.GrabOp.MOVING || op == Meta.GrabOp.KEYBOARD_MOVING))
-                this.emit('window-grabbed');
+                this.emit('reset');
         });
 
         /* Valid for wayland clients */
-        this._cursorLocationChangedId =
-            Main.inputMethod.connect('cursor-location-changed', (o, rect) => {
-                this._setCurrentRect(rect);
-            });
+        Main.inputMethod.connect('cursor-location-changed', (o, rect) => {
+            let newRect = { x: rect.get_x(), y: rect.get_y(), width: rect.get_width(), height: rect.get_height() };
+            this._setCurrentRect(newRect);
+        });
 
         this._ibusManager = IBusManager.getIBusManager();
-        this._setCursorLocationId =
-            this._ibusManager.connect('set-cursor-location', (manager, rect) => {
-                /* Valid for X11 clients only */
-                if (Main.inputMethod.currentFocus)
-                    return;
+        this._ibusManager.connect('set-cursor-location', (manager, rect) => {
+            /* Valid for X11 clients only */
+            if (Main.inputMethod.currentFocus)
+                return;
 
-                const grapheneRect = new Graphene.Rect();
-                grapheneRect.init(rect.x, rect.y, rect.width, rect.height);
-
-                this._setCurrentRect(grapheneRect);
-            });
-        this._focusInId = this._ibusManager.connect('focus-in', () => {
+            this._setCurrentRect(rect);
+        });
+        this._ibusManager.connect('focus-in', () => {
             this.emit('focus-changed', true);
         });
-        this._focusOutId = this._ibusManager.connect('focus-out', () => {
+        this._ibusManager.connect('focus-out', () => {
             this.emit('focus-changed', false);
         });
-    }
-
-    destroy() {
-        if (this._currentWindow) {
-            this._currentWindow.disconnect(this._currentWindowPositionChangedId);
-            delete this._currentWindowPositionChangedId;
-        }
-
-        global.display.disconnect(this._notifyFocusId);
-        global.display.disconnect(this._grabOpBeginId);
-        Main.inputMethod.disconnect(this._cursorLocationChangedId);
-        this._ibusManager.disconnect(this._setCursorLocationId);
-        this._ibusManager.disconnect(this._focusInId);
-        this._ibusManager.disconnect(this._focusOutId);
     }
 
     get currentWindow() {
@@ -612,39 +590,21 @@ var FocusTracker = class {
     }
 
     _setCurrentWindow(window) {
-        if (this._currentWindow) {
-            this._currentWindow.disconnect(this._currentWindowPositionChangedId);
-            delete this._currentWindowPositionChangedId;
-        }
-
         this._currentWindow = window;
-
-        if (this._currentWindow) {
-            this._currentWindowPositionChangedId =
-                this._currentWindow.connect('position-changed', () =>
-                    this.emit('window-moved'));
-        }
     }
 
     _setCurrentRect(rect) {
-        // Some clients give us 0-sized rects, in that case set size to 1
-        if (rect.size.width <= 0)
-            rect.size.width = 1;
-        if (rect.size.height <= 0)
-            rect.size.height = 1;
-
         if (this._currentWindow) {
-            const frameRect = this._currentWindow.get_frame_rect();
-            const grapheneFrameRect = new Graphene.Rect();
-            grapheneFrameRect.init(frameRect.x, frameRect.y,
-                frameRect.width, frameRect.height);
-
-            const rectInsideFrameRect = grapheneFrameRect.intersection(rect)[0];
-            if (!rectInsideFrameRect)
-                return;
+            let frameRect = this._currentWindow.get_frame_rect();
+            rect.x -= frameRect.x;
+            rect.y -= frameRect.y;
         }
 
-        if (this._rect && this._rect.equal(rect))
+        if (this._rect &&
+            this._rect.x == rect.x &&
+            this._rect.y == rect.y &&
+            this._rect.width == rect.width &&
+            this._rect.height == rect.height)
             return;
 
         this._rect = rect;
@@ -652,12 +612,14 @@ var FocusTracker = class {
     }
 
     getCurrentRect() {
-        const rect = {
-            x: this._rect.origin.x,
-            y: this._rect.origin.y,
-            width: this._rect.size.width,
-            height: this._rect.size.height,
-        };
+        let rect = { x: this._rect.x, y: this._rect.y,
+                     width: this._rect.width, height: this._rect.height };
+
+        if (this._currentWindow) {
+            let frameRect = this._currentWindow.get_frame_rect();
+            rect.x += frameRect.x;
+            rect.y += frameRect.y;
+        }
 
         return rect;
     }
@@ -778,7 +740,7 @@ var EmojiPager = GObject.registerClass({
 
     _onPan(action) {
         let [dist_, dx, dy_] = action.get_motion_delta(0);
-        this.delta += dx;
+        this.delta = this.delta + dx;
 
         if (this._currentKey != null) {
             this._currentKey.cancel();
@@ -991,7 +953,8 @@ var EmojiSelection = GObject.registerClass({
         this.add_child(this._emojiPager);
 
         this._pageIndicator = new PageIndicators.PageIndicators(
-            Clutter.Orientation.HORIZONTAL);
+            Clutter.Orientation.HORIZONTAL
+        );
         this.add_child(this._pageIndicator);
         this._pageIndicator.setReactive(false);
 
@@ -1174,31 +1137,13 @@ var KeyboardManager = class KeyBoardManager {
         this._seat.connect('notify::touch-mode', this._syncEnabled.bind(this));
 
         this._lastDevice = null;
-        global.backend.connect('last-device-changed', (backend, device) => {
+        Meta.get_backend().connect('last-device-changed', (backend, device) => {
             if (device.device_type === Clutter.InputDeviceType.KEYBOARD_DEVICE)
                 return;
 
             this._lastDevice = device;
             this._syncEnabled();
         });
-
-        const mode = Shell.ActionMode.ALL & ~Shell.ActionMode.LOCK_SCREEN;
-        const bottomDragAction = new EdgeDragAction.EdgeDragAction(St.Side.BOTTOM, mode);
-        bottomDragAction.connect('activated', () => {
-            if (this._keyboard)
-                this._keyboard.gestureActivate(Main.layoutManager.bottomIndex);
-        });
-        bottomDragAction.connect('progress', (_action, progress) => {
-            if (this._keyboard)
-                this._keyboard.gestureProgress(progress);
-        });
-        bottomDragAction.connect('gesture-cancel', () => {
-            if (this._keyboard)
-                this._keyboard.gestureCancel();
-        });
-        global.stage.add_action(bottomDragAction);
-        this._bottomDragAction = bottomDragAction;
-
         this._syncEnabled();
     }
 
@@ -1220,14 +1165,11 @@ var KeyboardManager = class KeyBoardManager {
 
         if (enabled && !this._keyboard) {
             this._keyboard = new Keyboard();
-            this._keyboard.connect('visibility-changed', () => {
-                this._bottomDragAction.enabled = !this._keyboard.visible;
-            });
         } else if (!enabled && this._keyboard) {
             this._keyboard.setCursorLocation(null);
             this._keyboard.destroy();
             this._keyboard = null;
-            this._bottomDragAction.enabled = true;
+            Main.layoutManager.hideKeyboard(true);
         }
     }
 
@@ -1240,10 +1182,8 @@ var KeyboardManager = class KeyBoardManager {
     }
 
     open(monitor) {
-        Main.layoutManager.keyboardIndex = monitor;
-
         if (this._keyboard)
-            this._keyboard.open();
+            this._keyboard.open(monitor);
     }
 
     close() {
@@ -1271,19 +1211,17 @@ var KeyboardManager = class KeyBoardManager {
     }
 };
 
-var Keyboard = GObject.registerClass({
-    Signals: {
-        'visibility-changed': {},
-    },
-}, class Keyboard extends St.BoxLayout {
+var Keyboard = GObject.registerClass(
+class Keyboard extends St.BoxLayout {
     _init() {
-        super._init({ name: 'keyboard', reactive: true, vertical: true });
+        super._init({ name: 'keyboard', vertical: true });
         this._focusInExtendedKeys = false;
         this._emojiActive = false;
 
         this._languagePopup = null;
-        this._focusWindow = null;
-        this._focusWindowStartY = null;
+        this._currentFocusWindow = null;
+        this._animFocusedWindow = null;
+        this._delayedAnimFocusWindow = null;
 
         this._latched = false; // current level is latched
 
@@ -1293,12 +1231,11 @@ var Keyboard = GObject.registerClass({
         this._focusTracker = new FocusTracker();
         this._connectSignal(this._focusTracker, 'position-changed',
             this._onFocusPositionChanged.bind(this));
-        this._connectSignal(this._focusTracker, 'window-grabbed',
-            this._onFocusWindowMoving.bind(this));
-
-        this._windowMovedId = this._focusTracker.connect('window-moved',
-            this._onFocusWindowMoving.bind(this));
-
+        this._connectSignal(this._focusTracker, 'reset', () => {
+            this._delayedAnimFocusWindow = null;
+            this._animFocusedWindow = null;
+            this._oskFocusWindow = null;
+        });
         // Valid only for X11
         if (!Meta.is_wayland_compositor()) {
             this._connectSignal(this._focusTracker, 'focus-changed', (_tracker, focused) => {
@@ -1312,6 +1249,9 @@ var Keyboard = GObject.registerClass({
         this._showIdleId = 0;
 
         this._keyboardVisible = false;
+        this._connectSignal(Main.layoutManager, 'keyboard-visible-changed', (_lm, visible) => {
+            this._keyboardVisible = visible;
+        });
         this._keyboardRequested = false;
         this._keyboardRestingId = 0;
 
@@ -1345,16 +1285,6 @@ var Keyboard = GObject.registerClass({
     }
 
     _onDestroy() {
-        if (this._windowMovedId) {
-            this._focusTracker.disconnect(this._windowMovedId);
-            delete this._windowMovedId;
-        }
-
-        if (this._focusTracker) {
-            this._focusTracker.destroy();
-            delete this._focusTracker;
-        }
-
         for (let [obj, id] of this._connectionsIDs)
             obj.disconnect(id);
         delete this._connectionsIDs;
@@ -1365,7 +1295,6 @@ var Keyboard = GObject.registerClass({
 
         Main.layoutManager.untrackChrome(this);
         Main.layoutManager.keyboardBox.remove_actor(this);
-        Main.layoutManager.keyboardBox.hide();
 
         if (this._languagePopup) {
             this._languagePopup.destroy();
@@ -1785,43 +1714,46 @@ var Keyboard = GObject.registerClass({
         this._keyboardRestingId = 0;
     }
 
-    open(immediate = false) {
+    open(monitor) {
         this._clearShowIdle();
         this._keyboardRequested = true;
 
         if (this._keyboardVisible) {
-            this._relayout();
+            if (monitor != Main.layoutManager.keyboardIndex) {
+                Main.layoutManager.keyboardIndex = monitor;
+                this._relayout();
+            }
             return;
         }
 
         this._clearKeyboardRestTimer();
-
-        if (immediate) {
-            this._open();
-            return;
-        }
-
         this._keyboardRestingId = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
             KEYBOARD_REST_TIME,
             () => {
                 this._clearKeyboardRestTimer();
-                this._open();
+                this._open(monitor);
                 return GLib.SOURCE_REMOVE;
             });
         GLib.Source.set_name_by_id(this._keyboardRestingId, '[gnome-shell] this._clearKeyboardRestTimer');
     }
 
-    _open() {
+    _open(monitor) {
         if (!this._keyboardRequested)
             return;
 
+        Main.layoutManager.keyboardIndex = monitor;
         this._relayout();
-        this._animateShow();
+        Main.layoutManager.showKeyboard();
 
         this._setEmojiActive(false);
+
+        if (this._delayedAnimFocusWindow) {
+            this._setAnimationWindow(this._delayedAnimFocusWindow);
+            this._delayedAnimFocusWindow = null;
+        }
     }
 
-    close(immediate = false) {
+    close() {
         this._clearShowIdle();
         this._keyboardRequested = false;
 
@@ -1829,12 +1761,6 @@ var Keyboard = GObject.registerClass({
             return;
 
         this._clearKeyboardRestTimer();
-
-        if (immediate) {
-            this._close();
-            return;
-        }
-
         this._keyboardRestingId = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
             KEYBOARD_REST_TIME,
             () => {
@@ -1849,87 +1775,8 @@ var Keyboard = GObject.registerClass({
         if (this._keyboardRequested)
             return;
 
-        this._animateHide();
+        Main.layoutManager.hideKeyboard();
         this.setCursorLocation(null);
-    }
-
-    _animateShow() {
-        if (this._focusWindow)
-            this._animateWindow(this._focusWindow, true);
-
-        Main.layoutManager.keyboardBox.show();
-        this.ease({
-            translation_y: -this.height,
-            opacity: 255,
-            duration: KEYBOARD_ANIMATION_TIME,
-            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            onComplete: () => {
-                this._animateShowComplete();
-            },
-        });
-        this._keyboardVisible = true;
-        this.emit('visibility-changed');
-    }
-
-    _animateShowComplete() {
-        let keyboardBox = Main.layoutManager.keyboardBox;
-        this._keyboardHeightNotifyId = keyboardBox.connect('notify::height', () => {
-            this.translation_y = -this.height;
-        });
-
-        // Toggle visibility so the keyboardBox can update its chrome region.
-        if (!Meta.is_wayland_compositor()) {
-            keyboardBox.hide();
-            keyboardBox.show();
-        }
-    }
-
-    _animateHide() {
-        if (this._focusWindow)
-            this._animateWindow(this._focusWindow, false);
-
-        if (this._keyboardHeightNotifyId) {
-            Main.layoutManager.keyboardBox.disconnect(this._keyboardHeightNotifyId);
-            this._keyboardHeightNotifyId = 0;
-        }
-        this.ease({
-            translation_y: 0,
-            opacity: 0,
-            duration: KEYBOARD_ANIMATION_TIME,
-            mode: Clutter.AnimationMode.EASE_IN_QUAD,
-            onComplete: () => {
-                this._animateHideComplete();
-            },
-        });
-
-        this._keyboardVisible = false;
-        this.emit('visibility-changed');
-    }
-
-    _animateHideComplete() {
-        Main.layoutManager.keyboardBox.hide();
-    }
-
-    gestureProgress(delta) {
-        this._gestureInProgress = true;
-        Main.layoutManager.keyboardBox.show();
-        let progress = Math.min(delta, this.height) / this.height;
-        this.translation_y = -this.height * progress;
-        this.opacity = 255 * progress;
-        const windowActor = this._focusWindow?.get_compositor_private();
-        if (windowActor)
-            windowActor.y = this._focusWindowStartY - (this.height * progress);
-    }
-
-    gestureActivate() {
-        this.open(true);
-        this._gestureInProgress = false;
-    }
-
-    gestureCancel() {
-        if (this._gestureInProgress)
-            this._animateHide();
-        this._gestureInProgress = false;
     }
 
     resetSuggestions() {
@@ -1951,91 +1798,72 @@ var Keyboard = GObject.registerClass({
         this._showIdleId = 0;
     }
 
-    _windowSlideAnimationComplete(window, finalY) {
+    _windowSlideAnimationComplete(window, delta) {
         // Synchronize window positions again.
-        const frameRect = window.get_frame_rect();
-        const bufferRect = window.get_buffer_rect();
-
-        finalY += frameRect.y - bufferRect.y;
-
-        frameRect.y = finalY;
-
-        this._focusTracker.disconnect(this._windowMovedId);
+        let frameRect = window.get_frame_rect();
+        frameRect.y += delta;
         window.move_frame(true, frameRect.x, frameRect.y);
-        this._windowMovedId = this._focusTracker.connect('window-moved',
-            this._onFocusWindowMoving.bind(this));
     }
 
     _animateWindow(window, show) {
         let windowActor = window.get_compositor_private();
+        let deltaY = Main.layoutManager.keyboardBox.height;
         if (!windowActor)
             return;
 
-        const finalY = show
-            ? this._focusWindowStartY - Main.layoutManager.keyboardBox.height
-            : this._focusWindowStartY;
-
-        windowActor.ease({
-            y: finalY,
-            duration: KEYBOARD_ANIMATION_TIME,
-            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            onStopped: () => {
-                windowActor.y = finalY;
-                this._windowSlideAnimationComplete(window, finalY);
-            },
-        });
-    }
-
-    _onFocusWindowMoving() {
-        if (this._focusTracker.currentWindow === this._focusWindow) {
-            // Don't use _setFocusWindow() here because that would move the
-            // window while the user has grabbed it. Instead we simply "let go"
-            // of the window.
-            this._focusWindow = null;
-            this._focusWindowStartY = null;
+        if (show) {
+            windowActor.ease({
+                y: windowActor.y - deltaY,
+                duration: Layout.KEYBOARD_ANIMATION_TIME,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                onComplete: () => {
+                    this._windowSlideAnimationComplete(window, -deltaY);
+                },
+            });
+        } else {
+            windowActor.ease({
+                y: windowActor.y + deltaY,
+                duration: Layout.KEYBOARD_ANIMATION_TIME,
+                mode: Clutter.AnimationMode.EASE_IN_QUAD,
+                onComplete: () => {
+                    this._windowSlideAnimationComplete(window, deltaY);
+                },
+            });
         }
-
-        this.close(true);
     }
 
-    _setFocusWindow(window) {
-        if (this._focusWindow === window)
+    _setAnimationWindow(window) {
+        if (this._animFocusedWindow == window)
             return;
 
-        if (this._keyboardVisible && this._focusWindow)
-            this._animateWindow(this._focusWindow, false);
-
-        const windowActor = window?.get_compositor_private();
-        windowActor?.remove_transition('y');
-        this._focusWindowStartY = windowActor ? windowActor.y : null;
-
-        if (this._keyboardVisible && window)
+        if (this._animFocusedWindow)
+            this._animateWindow(this._animFocusedWindow, false);
+        if (window)
             this._animateWindow(window, true);
 
-        this._focusWindow = window;
+        this._animFocusedWindow = window;
     }
 
     setCursorLocation(window, x, y, w, h) {
         let monitor = Main.layoutManager.keyboardMonitor;
 
         if (window && monitor) {
-            const keyboardHeight = Main.layoutManager.keyboardBox.height;
-            const keyboardY1 = (monitor.y + monitor.height) - keyboardHeight;
+            let keyboardHeight = Main.layoutManager.keyboardBox.height;
 
-            if (this._focusWindow === window) {
-                if (y + h + keyboardHeight < keyboardY1)
-                    this._setFocusWindow(null);
-
-                return;
+            if (y + h >= monitor.y + monitor.height - keyboardHeight) {
+                if (this._keyboardVisible)
+                    this._setAnimationWindow(window);
+                else
+                    this._delayedAnimFocusWindow = window;
+            } else if (y < keyboardHeight) {
+                this._delayedAnimFocusWindow = null;
+                this._setAnimationWindow(null);
             }
-
-            if (y + h >= keyboardY1)
-                this._setFocusWindow(window);
-            else
-                this._setFocusWindow(null);
         } else {
-            this._setFocusWindow(null);
+            this._setAnimationWindow(null);
         }
+
+        this._oskFocusWindow = window;
     }
 });
 
@@ -2128,12 +1956,12 @@ var KeyboardController = class {
     }
 
     keyvalPress(keyval) {
-        this._virtualDevice.notify_keyval(Clutter.get_current_event_time() * 1000,
+        this._virtualDevice.notify_keyval(Clutter.get_current_event_time(),
                                           keyval, Clutter.KeyState.PRESSED);
     }
 
     keyvalRelease(keyval) {
-        this._virtualDevice.notify_keyval(Clutter.get_current_event_time() * 1000,
+        this._virtualDevice.notify_keyval(Clutter.get_current_event_time(),
                                           keyval, Clutter.KeyState.RELEASED);
     }
 };

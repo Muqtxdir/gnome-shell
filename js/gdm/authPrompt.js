@@ -1,7 +1,7 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 /* exported AuthPrompt */
 
-const { Clutter, GLib, GObject, Pango, Shell, St } = imports.gi;
+const { Clutter, GObject, Pango, Shell, St } = imports.gi;
 
 const Animation = imports.ui.animation;
 const Batch = imports.gdm.batch;
@@ -170,13 +170,6 @@ var AuthPrompt = GObject.registerClass({
         this._mainBox.add_child(this._entry);
         this._entry.grab_key_focus();
 
-        this._timedLoginIndicator = new St.Bin({
-            style_class: 'login-dialog-timed-login-indicator',
-            scale_x: 0,
-        });
-
-        this.add_child(this._timedLoginIndicator);
-
         [this._textEntry, this._passwordEntry].forEach(entry => {
             entry.clutter_text.connect('text-changed', () => {
                 if (!this._userVerifier.hasPendingMessages)
@@ -203,40 +196,6 @@ var AuthPrompt = GObject.registerClass({
 
         this._spinner = new Animation.Spinner(DEFAULT_BUTTON_WELL_ICON_SIZE);
         this._defaultButtonWell.add_child(this._spinner);
-    }
-
-    showTimedLoginIndicator(time) {
-        let hold = new Batch.Hold();
-
-        this.hideTimedLoginIndicator();
-
-        const startTime = GLib.get_monotonic_time();
-
-        this._timedLoginTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 33,
-            () => {
-                const currentTime = GLib.get_monotonic_time();
-                const elapsedTime = (currentTime - startTime) / GLib.USEC_PER_SEC;
-                this._timedLoginIndicator.scale_x = elapsedTime / time;
-                if (elapsedTime >= time) {
-                    this._timedLoginTimeoutId = 0;
-                    hold.release();
-                    return GLib.SOURCE_REMOVE;
-                }
-
-                return GLib.SOURCE_CONTINUE;
-            });
-
-        GLib.Source.set_name_by_id(this._timedLoginTimeoutId, '[gnome-shell] this._timedLoginTimeoutId');
-
-        return hold;
-    }
-
-    hideTimedLoginIndicator() {
-        if (this._timedLoginTimeoutId) {
-            GLib.source_remove(this._timedLoginTimeoutId);
-            this._timedLoginTimeoutId = 0;
-        }
-        this._timedLoginIndicator.scale_x = 0.;
     }
 
     _activateNext(shouldSpin) {
@@ -321,17 +280,12 @@ var AuthPrompt = GObject.registerClass({
 
     _onVerificationFailed(userVerifier, serviceName, canRetry) {
         const wasQueryingService = this._queryingService === serviceName;
-
-        if (wasQueryingService) {
-            this._queryingService = null;
-            this.clear();
-        }
+        this._queryingService = null;
+        this.clear();
 
         this.updateSensitivity(canRetry);
         this.setActorInDefaultButtonWell(null);
-
-        if (!canRetry)
-            this.verificationStatus = AuthPromptStatus.VERIFICATION_FAILED;
+        this.verificationStatus = AuthPromptStatus.VERIFICATION_FAILED;
 
         if (wasQueryingService)
             Util.wiggle(this._entry);
@@ -496,14 +450,10 @@ var AuthPrompt = GObject.registerClass({
 
         this._entry.reactive = sensitive;
 
-        if (sensitive) {
+        if (sensitive)
             this._entry.grab_key_focus();
-        } else {
+        else
             this.grab_key_focus();
-
-            if (this._entry === this._passwordEntry)
-                this._entry.password_visible = false;
-        }
     }
 
     vfunc_hide() {

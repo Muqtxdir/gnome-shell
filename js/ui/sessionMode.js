@@ -1,7 +1,6 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 /* exported SessionMode, listModes */
 
-const ByteArray = imports.byteArray;
 const GLib = imports.gi.GLib;
 const Signals = imports.signals;
 
@@ -19,7 +18,6 @@ const _modes = {
         themeResourceName: 'gnome-shell-theme.gresource',
         hasOverview: false,
         showCalendarEvents: false,
-        showWelcomeDialog: false,
         allowSettings: false,
         allowExtensions: false,
         allowScreencast: false,
@@ -45,8 +43,8 @@ const _modes = {
 
     'gdm': {
         hasNotifications: true,
-        stylesheetName: 'gdm.css',
-        themeResourceName: 'gdm-theme.gresource',
+        stylesheetName: 'gdm3.css',
+        themeResourceName: 'gdm3-theme.gresource',
         isGreeter: true,
         isPrimary: true,
         unlockDialog: imports.gdm.loginDialog.LoginDialog,
@@ -74,7 +72,6 @@ const _modes = {
     'user': {
         hasOverview: true,
         showCalendarEvents: true,
-        showWelcomeDialog: true,
         allowSettings: true,
         allowExtensions: true,
         allowScreencast: true,
@@ -111,17 +108,18 @@ function _loadMode(file, info) {
     let fileContent, success_, newMode;
     try {
         [success_, fileContent] = file.load_contents(null);
-        fileContent = ByteArray.toString(fileContent);
+        if (fileContent instanceof Uint8Array)
+            fileContent = imports.byteArray.toString(fileContent);
         newMode = JSON.parse(fileContent);
     } catch (e) {
         return;
     }
 
     _modes[modeName] = {};
-    const  excludedProps = ['unlockDialog'];
+    let propBlacklist = ['unlockDialog'];
     for (let prop in _modes[DEFAULT_MODE]) {
         if (newMode[prop] !== undefined &&
-            !excludedProps.includes(prop))
+            !propBlacklist.includes(prop))
             _modes[modeName][prop] = newMode[prop];
     }
     _modes[modeName]['isPrimary'] = true;

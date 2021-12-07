@@ -2,7 +2,6 @@
 /* exported getAppFavorites */
 
 const Shell = imports.gi.Shell;
-const ParentalControlsManager = imports.misc.parentalControlsManager;
 const Signals = imports.signals;
 
 const Main = imports.ui.main;
@@ -66,13 +65,6 @@ const RENAMED_DESKTOP_IDS = {
 
 class AppFavorites {
     constructor() {
-        // Filter the apps through the user’s parental controls.
-        this._parentalControlsManager = ParentalControlsManager.getDefault();
-        this._parentalControlsManager.connect('app-filter-changed', () => {
-            this.reload();
-            this.emit('changed');
-        });
-
         this.FAVORITE_APPS_KEY = 'favorite-apps';
         this._favorites = {};
         global.settings.connect('changed::%s'.format(this.FAVORITE_APPS_KEY), this._onFavsChanged.bind(this));
@@ -104,7 +96,7 @@ class AppFavorites {
             global.settings.set_strv(this.FAVORITE_APPS_KEY, ids);
 
         let apps = ids.map(id => appSys.lookup_app(id))
-                      .filter(app => app !== null && this._parentalControlsManager.shouldShowApp(app.app_info));
+                      .filter(app => app != null);
         this._favorites = {};
         for (let i = 0; i < apps.length; i++) {
             let app = apps[i];
@@ -141,9 +133,6 @@ class AppFavorites {
         let app = Shell.AppSystem.get_default().lookup_app(appId);
 
         if (!app)
-            return false;
-
-        if (!this._parentalControlsManager.shouldShowApp(app.app_info))
             return false;
 
         let ids = this._getIds();

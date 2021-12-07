@@ -101,8 +101,6 @@ const LoginManager = imports.misc.loginManager;
 const Main = imports.ui.main;
 const Params = imports.misc.params;
 
-Gio._promisify(Gio._LocalFilePrototype, 'query_info_async', 'query_info_finish');
-
 var DEFAULT_BACKGROUND_COLOR = Clutter.Color.from_pixel(0x2e3436ff);
 
 if (imports.misc.desktop.is("ubuntu")) {
@@ -486,15 +484,8 @@ var Background = GObject.registerClass({
         }
     }
 
-    async _loadFile(file) {
-        const info = await file.query_info_async(
-            Gio.FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
-            Gio.FileQueryInfoFlags.NONE,
-            0,
-            null);
-
-        const contentType = info.get_content_type();
-        if (contentType === 'application/xml')
+    _loadFile(file) {
+        if (file.get_basename().endsWith('.xml'))
             this._loadAnimation(file);
         else
             this._loadImage(file);
@@ -528,8 +519,8 @@ var SystemBackground = GObject.registerClass({
         super._init({
             meta_display: global.display,
             monitor: 0,
+            background: _systemBackground,
         });
-        this.content.background = _systemBackground;
 
         let id = GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
             this.emit('loaded');
@@ -669,15 +660,12 @@ class Animation extends GnomeDesktop.BGSlideShow {
 
 var BackgroundManager = class BackgroundManager {
     constructor(params) {
-        params = Params.parse(params, {
-            container: null,
-            layoutManager: Main.layoutManager,
-            monitorIndex: null,
-            vignette: false,
-            controlPosition: true,
-            settingsSchema: BACKGROUND_SCHEMA,
-            useContentSize: true,
-        });
+        params = Params.parse(params, { container: null,
+                                        layoutManager: Main.layoutManager,
+                                        monitorIndex: null,
+                                        vignette: false,
+                                        controlPosition: true,
+                                        settingsSchema: BACKGROUND_SCHEMA });
 
         let cache = getBackgroundCache();
         this._settingsSchema = params.settingsSchema;
@@ -688,7 +676,6 @@ var BackgroundManager = class BackgroundManager {
         this._vignette = params.vignette;
         this._monitorIndex = params.monitorIndex;
         this._controlPosition = params.controlPosition;
-        this._useContentSize = params.useContentSize;
 
         this.backgroundActor = this._createBackgroundActor();
         this._newBackgroundActor = null;
@@ -732,18 +719,13 @@ var BackgroundManager = class BackgroundManager {
         }
 
         let newBackgroundActor = this._createBackgroundActor();
-
-        const oldContent = this.backgroundActor.content;
-        const newContent = newBackgroundActor.content;
-
-        newContent.vignette_sharpness = oldContent.vignette_sharpness;
-        newContent.brightness = oldContent.brightness;
-
+        newBackgroundActor.vignette_sharpness = this.backgroundActor.vignette_sharpness;
+        newBackgroundActor.brightness = this.backgroundActor.brightness;
         newBackgroundActor.visible = this.backgroundActor.visible;
 
         this._newBackgroundActor = newBackgroundActor;
 
-        const { background } = newBackgroundActor.content;
+        let background = newBackgroundActor.background;
 
         if (background.isLoaded) {
             this._swapBackgroundActor();
@@ -763,13 +745,6 @@ var BackgroundManager = class BackgroundManager {
         let backgroundActor = new Meta.BackgroundActor({
             meta_display: global.display,
             monitor: this._monitorIndex,
-            request_mode: this._useContentSize
-                ? Clutter.RequestMode.CONTENT_SIZE
-                : Clutter.RequestMode.HEIGHT_FOR_WIDTH,
-            x_expand: !this._useContentSize,
-            y_expand: !this._useContentSize,
-        });
-        backgroundActor.content.set({
             background,
             vignette: this._vignette,
             vignette_sharpness: 0.5,

@@ -199,89 +199,41 @@ st_settings_class_init (StSettingsClass *klass)
   object_class->set_property = st_settings_set_property;
   object_class->get_property = st_settings_get_property;
 
-  /**
-   * StSettings:enable-animations:
-   *
-   * Whether animations are enabled.
-   */
   props[PROP_ENABLE_ANIMATIONS] = g_param_spec_boolean ("enable-animations",
                                                         "Enable animations",
                                                         "Enable animations",
                                                         TRUE,
                                                         ST_PARAM_READABLE);
-
-  /**
-   * StSettings:primary-paste:
-   *
-   * Whether pasting from the `PRIMARY` selection is supported (eg. middle-click
-   * paste).
-   */
   props[PROP_PRIMARY_PASTE] = g_param_spec_boolean ("primary-paste",
                                                     "Primary paste",
                                                     "Primary paste",
                                                     TRUE,
                                                     ST_PARAM_READABLE);
-
-  /**
-   * StSettings:drag-threshold:
-   *
-   * The threshold before a drag operation begins.
-   */
   props[PROP_DRAG_THRESHOLD] = g_param_spec_int ("drag-threshold",
                                                  "Drag threshold",
                                                  "Drag threshold",
                                                  0, G_MAXINT, 8,
                                                  ST_PARAM_READABLE);
-
-  /**
-   * StSettings:font-name:
-   *
-   * The current font name.
-   */
   props[PROP_FONT_NAME] = g_param_spec_string ("font-name",
                                                "font name",
                                                "font name",
                                                "",
                                                ST_PARAM_READABLE);
-
-  /**
-   * StSettings:gtk-theme:
-   *
-   * The current GTK theme.
-   */
   props[PROP_GTK_THEME] = g_param_spec_string ("gtk-theme",
-                                               "GTK Theme",
-                                               "GTK Theme",
+                                               "GTK+ Theme",
+                                               "GTK+ Theme",
                                                "",
                                                ST_PARAM_READABLE);
-
-  /**
-   * StSettings:gtk-icon-theme:
-   *
-   * The current GTK icon theme
-   */
   props[PROP_GTK_ICON_THEME] = g_param_spec_string ("gtk-icon-theme",
-                                                    "GTK Icon Theme",
-                                                    "GTK Icon Theme",
+                                                    "GTK+ Icon Theme",
+                                                    "GTK+ Icon Theme",
                                                     "",
                                                     ST_PARAM_READABLE);
-
-  /**
-   * StSettings:magnifier-active:
-   *
-   * Whether the accessibility magnifier is active.
-   */
   props[PROP_MAGNIFIER_ACTIVE] = g_param_spec_boolean("magnifier-active",
                                                       "Magnifier is active",
-                                                      "Whether the a11y magnifier is active",
+                                                      "Weather the a11y magnifier is active",
                                                       FALSE,
                                                       ST_PARAM_READABLE);
-
-  /**
-   * StSettings:slow-down-factor:
-   *
-   * The slow-down factor applied to all animation durations.
-   */
   props[PROP_SLOW_DOWN_FACTOR] = g_param_spec_double("slow-down-factor",
                                                       "Slow down factor",
                                                       "Factor applied to all animation durations",
@@ -358,7 +310,7 @@ st_settings_init (StSettings *settings)
   g_signal_connect (settings->interface_settings, "changed",
                     G_CALLBACK (on_interface_settings_changed), settings);
 
-  settings->mouse_settings = g_settings_new ("org.gnome.desktop.peripherals.mouse");
+  settings->mouse_settings = g_settings_new ("org.gnome.settings-daemon.peripherals.mouse");
   g_signal_connect (settings->interface_settings, "changed",
                     G_CALLBACK (on_mouse_settings_changed), settings);
 
@@ -386,9 +338,9 @@ st_settings_init (StSettings *settings)
 /**
  * st_settings_get:
  *
- * Gets the global #StSettings object.
+ * Gets the #StSettings
  *
- * Returns: (transfer none): the global #StSettings object
+ * Returns: (transfer none): a settings object
  **/
 StSettings *
 st_settings_get (void)

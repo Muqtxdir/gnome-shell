@@ -2,30 +2,16 @@
 /* exported BANNER_MESSAGE_KEY, BANNER_MESSAGE_TEXT_KEY, LOGO_KEY,
             DISABLE_USER_LIST_KEY, fadeInActor, fadeOutActor, cloneAndFadeOutActor */
 
-const { Clutter, Gdm, Gio, GLib } = imports.gi;
+const { Clutter, Gio, GLib } = imports.gi;
 const Signals = imports.signals;
 
 const Batch = imports.gdm.batch;
+const Fprint = imports.gdm.fingerprint;
 const OVirt = imports.gdm.oVirt;
 const Vmware = imports.gdm.vmware;
 const Main = imports.ui.main;
-const { loadInterfaceXML } = imports.misc.fileUtils;
 const Params = imports.misc.params;
 const SmartcardManager = imports.misc.smartcardManager;
-
-const FprintManagerIface = loadInterfaceXML('net.reactivated.Fprint.Manager');
-const FprintManagerProxy = Gio.DBusProxy.makeProxyWrapper(FprintManagerIface);
-const FprintDeviceIface = loadInterfaceXML('net.reactivated.Fprint.Device');
-const FprintDeviceProxy = Gio.DBusProxy.makeProxyWrapper(FprintDeviceIface);
-
-Gio._promisify(Gdm.Client.prototype,
-    'open_reauthentication_channel', 'open_reauthentication_channel_finish');
-Gio._promisify(Gdm.Client.prototype,
-    'get_user_verifier', 'get_user_verifier_finish');
-Gio._promisify(Gdm.UserVerifierProxy.prototype,
-    'call_begin_verification_for_user', 'call_begin_verification_for_user_finish');
-Gio._promisify(Gdm.UserVerifierProxy.prototype,
-    'call_begin_verification', 'call_begin_verification_finish');
 
 var PASSWORD_SERVICE_NAME = 'gdm-password';
 var FINGERPRINT_SERVICE_NAME = 'gdm-fingerprint';
@@ -46,20 +32,12 @@ var DISABLE_USER_LIST_KEY = 'disable-user-list';
 
 // Give user 48ms to read each character of a PAM message
 var USER_READ_TIME = 48;
-const FINGERPRINT_ERROR_TIMEOUT_WAIT = 15;
 
 var MessageType = {
-    // Keep messages in order by priority
     NONE: 0,
-    HINT: 1,
+    ERROR: 1,
     INFO: 2,
-    ERROR: 3,
-};
-
-const FingerprintReaderType = {
-    NONE: 0,
-    PRESS: 1,
-    SWIPE: 2,
+    HINT: 3,
 };
 
 function fadeInActor(actor) {
@@ -151,12 +129,7 @@ var ShellUserVerifier = class {
                                this._updateDefaultService.bind(this));
         this._updateDefaultService();
 
-        this._fprintManager = new FprintManagerProxy(Gio.DBus.system,
-            'net.reactivated.Fprint',
-            '/net/reactivated/Fprint/Manager',
-            null,
-            null,
-            Gio.DBusProxyFlags.DO_NOT_LOAD_PROPERTIES);
+        this._fprintManager = Fprint.FprintManager();
         this._smartcardManager = SmartcardManager.getSmartcardManager();
 
         // We check for smartcards right away, since an inserted smartcard
@@ -173,6 +146,7 @@ var ShellUserVerifier = class {
 
         this._messageQueue = [];
         this._messageQueueTimeoutId = 0;
+        this.hasPendingMessages = false;
         this.reauthenticating = false;
 
         this._failCounter = 0;
@@ -194,16 +168,8 @@ var ShellUserVerifier = class {
         }
     }
 
-    get hasPendingMessages() {
-        return !!this._messageQueue.length;
-    }
-
     get allowedFailures() {
         return this._settings.get_int(ALLOWED_FAILURES_KEY);
-    }
-
-    get currentMessage() {
-        return this._messageQueue ? this._messageQueue[0] : null;
     }
 
     begin(userName, hold) {
@@ -214,12 +180,14 @@ var ShellUserVerifier = class {
 
         this._checkForFingerprintReader();
 
-        // If possible, reauthenticate an already running session,
-        // so any session specific credentials get updated appropriately
-        if (userName)
-            this._openReauthenticationChannel(userName);
-        else
-            this._getUserVerifier();
+        if (userName) {
+            // If possible, reauthenticate an already running session,
+            // so any session specific credentials get updated appropriately
+            this._client.open_reauthentication_channel(userName, this._cancellable,
+                                                       this._reauthenticationChannelOpened.bind(this));
+        } else {
+            this._client.get_user_verifier(this._cancellable, this._userVerifierGot.bind(this));
+        }
     }
 
     cancel() {
@@ -234,7 +202,6 @@ var ShellUserVerifier = class {
 
     _clearUserVerifier() {
         if (this._userVerifier) {
-            this._disconnectSignals();
             this._userVerifier.run_dispose();
             this._userVerifier = null;
         }
@@ -281,9 +248,6 @@ var ShellUserVerifier = class {
     }
 
     _getIntervalForMessage(message) {
-        if (!message)
-            return 0;
-
         // We probably could be smarter here
         return message.length * USER_READ_TIME;
     }
@@ -294,6 +258,7 @@ var ShellUserVerifier = class {
 
         this._messageQueue = [];
 
+        this.hasPendingMessages = false;
         this.emit('no-more-messages');
     }
 
@@ -302,62 +267,36 @@ var ShellUserVerifier = class {
             this._currentMessageExtraInterval = interval;
     }
 
-    _serviceHasPendingMessages(serviceName) {
-        return this._messageQueue.some(m => m.serviceName === serviceName);
-    }
-
-    _filterServiceMessages(serviceName, messageType) {
-        // This function allows to remove queued messages for the @serviceName
-        // whose type has lower priority than @messageType, replacing them
-        // with a null message that will lead to clearing the prompt once done.
-        if (this._serviceHasPendingMessages(serviceName))
-            this._queuePriorityMessage(serviceName, null, messageType);
-    }
-
     _queueMessageTimeout() {
+        if (this._messageQueue.length == 0) {
+            this.finishMessageQueue();
+            return;
+        }
+
         if (this._messageQueueTimeoutId != 0)
             return;
 
-        const message = this.currentMessage;
+        let message = this._messageQueue.shift();
 
         delete this._currentMessageExtraInterval;
         this.emit('show-message', message.serviceName, message.text, message.type);
 
         this._messageQueueTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
-            message.interval + (this._currentMessageExtraInterval | 0), () => {
-                this._messageQueueTimeoutId = 0;
-
-                if (this._messageQueue.length > 1) {
-                    this._messageQueue.shift();
-                    this._queueMessageTimeout();
-                } else {
-                    this.finishMessageQueue();
-                }
-
-                return GLib.SOURCE_REMOVE;
-            });
+            message.interval + (this._currentMessageExtraInterval | 0),
+                                                       () => {
+                                                           this._messageQueueTimeoutId = 0;
+                                                           this._queueMessageTimeout();
+                                                           return GLib.SOURCE_REMOVE;
+                                                       });
         GLib.Source.set_name_by_id(this._messageQueueTimeoutId, '[gnome-shell] this._queueMessageTimeout');
     }
 
     _queueMessage(serviceName, message, messageType) {
         let interval = this._getIntervalForMessage(message);
 
+        this.hasPendingMessages = true;
         this._messageQueue.push({ serviceName, text: message, type: messageType, interval });
         this._queueMessageTimeout();
-    }
-
-    _queuePriorityMessage(serviceName, message, messageType) {
-        const newQueue = this._messageQueue.filter(m => {
-            if (m.serviceName !== serviceName || m.type >= messageType)
-                return m.text !== message;
-            return false;
-        });
-
-        if (!newQueue.includes(this.currentMessage))
-            this._clearMessageQueue();
-
-        this._messageQueue = newQueue;
-        this._queueMessage(serviceName, message, messageType);
     }
 
     _clearMessageQueue() {
@@ -371,7 +310,7 @@ var ShellUserVerifier = class {
     }
 
     _checkForFingerprintReader() {
-        this._fingerprintReaderType = FingerprintReaderType.NONE;
+        this._haveFingerprintReader = false;
 
         if (!this._settings.get_boolean(FINGERPRINT_AUTHENTICATION_KEY) ||
             this._fprintManager == null) {
@@ -380,17 +319,9 @@ var ShellUserVerifier = class {
         }
 
         this._fprintManager.GetDefaultDeviceRemote(Gio.DBusCallFlags.NONE, this._cancellable,
-            (params, error) => {
-                if (!error && params) {
-                    const [device] = params;
-                    const fprintDeviceProxy = new FprintDeviceProxy(Gio.DBus.system,
-                        'net.reactivated.Fprint',
-                        device);
-                    const fprintDeviceType = fprintDeviceProxy['scan-type'];
-
-                    this._fingerprintReaderType = fprintDeviceType === 'swipe'
-                        ? FingerprintReaderType.SWIPE
-                        : FingerprintReaderType.PRESS;
+            (device, error) => {
+                if (!error && device) {
+                    this._haveFingerprintReader = true;
                     this._updateDefaultService();
                 }
             });
@@ -432,11 +363,10 @@ var ShellUserVerifier = class {
         this._verificationFailed(serviceName, false);
     }
 
-    async _openReauthenticationChannel(userName) {
+    _reauthenticationChannelOpened(client, result) {
         try {
             this._clearUserVerifier();
-            this._userVerifier = await this._client.open_reauthentication_channel(
-                userName, this._cancellable);
+            this._userVerifier = client.open_reauthentication_channel_finish(result);
         } catch (e) {
             if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
                 return;
@@ -445,7 +375,8 @@ var ShellUserVerifier = class {
                 // Gdm emits org.freedesktop.DBus.Error.AccessDenied when there
                 // is no session to reauthenticate. Fall back to performing
                 // verification from this login session
-                this._getUserVerifier();
+                client.get_user_verifier(this._cancellable,
+                                         this._userVerifierGot.bind(this));
                 return;
             }
 
@@ -459,11 +390,10 @@ var ShellUserVerifier = class {
         this._hold.release();
     }
 
-    async _getUserVerifier() {
+    _userVerifierGot(client, result) {
         try {
             this._clearUserVerifier();
-            this._userVerifier =
-                await this._client.get_user_verifier(this._cancellable);
+            this._userVerifier = client.get_user_verifier_finish(result);
         } catch (e) {
             if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
                 return;
@@ -477,33 +407,14 @@ var ShellUserVerifier = class {
     }
 
     _connectSignals() {
-        this._disconnectSignals();
-        this._signalIds = [];
-
-        let id = this._userVerifier.connect('info', this._onInfo.bind(this));
-        this._signalIds.push(id);
-        id = this._userVerifier.connect('problem', this._onProblem.bind(this));
-        this._signalIds.push(id);
-        id = this._userVerifier.connect('info-query', this._onInfoQuery.bind(this));
-        this._signalIds.push(id);
-        id = this._userVerifier.connect('secret-info-query', this._onSecretInfoQuery.bind(this));
-        this._signalIds.push(id);
-        id = this._userVerifier.connect('conversation-stopped', this._onConversationStopped.bind(this));
-        this._signalIds.push(id);
-        id = this._userVerifier.connect('service-unavailable', this._onServiceUnavailable.bind(this));
-        this._signalIds.push(id);
-        id = this._userVerifier.connect('reset', this._onReset.bind(this));
-        this._signalIds.push(id);
-        id = this._userVerifier.connect('verification-complete', this._onVerificationComplete.bind(this));
-        this._signalIds.push(id);
-    }
-
-    _disconnectSignals() {
-        if (!this._signalIds || !this._userVerifier)
-            return;
-
-        this._signalIds.forEach(s => this._userVerifier.disconnect(s));
-        this._signalIds = [];
+        this._userVerifier.connect('info', this._onInfo.bind(this));
+        this._userVerifier.connect('problem', this._onProblem.bind(this));
+        this._userVerifier.connect('info-query', this._onInfoQuery.bind(this));
+        this._userVerifier.connect('secret-info-query', this._onSecretInfoQuery.bind(this));
+        this._userVerifier.connect('conversation-stopped', this._onConversationStopped.bind(this));
+        this._userVerifier.connect('service-unavailable', this._onServiceUnavailable.bind(this));
+        this._userVerifier.connect('reset', this._onReset.bind(this));
+        this._userVerifier.connect('verification-complete', this._onVerificationComplete.bind(this));
     }
 
     _getForegroundService() {
@@ -522,7 +433,7 @@ var ShellUserVerifier = class {
     }
 
     serviceIsFingerprint(serviceName) {
-        return this._fingerprintReaderType !== FingerprintReaderType.NONE &&
+        return this._haveFingerprintReader &&
             serviceName === FINGERPRINT_SERVICE_NAME;
     }
 
@@ -531,7 +442,7 @@ var ShellUserVerifier = class {
             this._defaultService = PASSWORD_SERVICE_NAME;
         else if (this._settings.get_boolean(SMARTCARD_AUTHENTICATION_KEY))
             this._defaultService = SMARTCARD_SERVICE_NAME;
-        else if (this._fingerprintReaderType !== FingerprintReaderType.NONE)
+        else if (this._haveFingerprintReader)
             this._defaultService = FINGERPRINT_SERVICE_NAME;
 
         if (!this._defaultService) {
@@ -540,60 +451,67 @@ var ShellUserVerifier = class {
         }
     }
 
-    async _startService(serviceName) {
+    _startService(serviceName) {
         this._hold.acquire();
-        try {
-            if (this._userName) {
-                await this._userVerifier.call_begin_verification_for_user(
-                    serviceName, this._userName, this._cancellable);
-            } else {
-                await this._userVerifier.call_begin_verification(
-                    serviceName, this._cancellable);
-            }
-        } catch (e) {
-            if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
-                return;
-            if (!this.serviceIsForeground(serviceName)) {
-                logError(e, 'Failed to start %s for %s'.format(serviceName, this._userName));
+        if (this._userName) {
+            this._userVerifier.call_begin_verification_for_user(serviceName, this._userName, this._cancellable, (obj, result) => {
+                try {
+                    obj.call_begin_verification_for_user_finish(result);
+                } catch (e) {
+                    if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                        return;
+                    if (!this.serviceIsForeground(serviceName)) {
+                        logError(e, 'Failed to start %s for %s'.format(serviceName, this._userName));
+                        this._hold.release();
+                        return;
+                    }
+                    this._reportInitError('Failed to start verification for user', e,
+                        serviceName);
+                    return;
+                }
+
                 this._hold.release();
-                return;
-            }
-            this._reportInitError(this._userName
-                ? 'Failed to start %s verification for user'.format(serviceName)
-                : 'Failed to start %s verification'.format(serviceName), e,
-            serviceName);
-            return;
+            });
+        } else {
+            this._userVerifier.call_begin_verification(serviceName, this._cancellable, (obj, result) => {
+                try {
+                    obj.call_begin_verification_finish(result);
+                } catch (e) {
+                    if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                        return;
+                    if (!this.serviceIsForeground(serviceName)) {
+                        logError(e, 'Failed to start %s'.format(serviceName));
+                        this._hold.release();
+                        return;
+                    }
+                    this._reportInitError('Failed to start %s verification'.format(serviceName), e,
+                        serviceName);
+                    return;
+                }
+
+                this._hold.release();
+            });
         }
-        this._hold.release();
     }
 
     _beginVerification() {
         this._startService(this._getForegroundService());
 
-        if (this._userName &&
-            this._fingerprintReaderType !== FingerprintReaderType.NONE &&
-            !this.serviceIsForeground(FINGERPRINT_SERVICE_NAME))
+        if (this._userName && this._haveFingerprintReader && !this.serviceIsForeground(FINGERPRINT_SERVICE_NAME))
             this._startService(FINGERPRINT_SERVICE_NAME);
     }
 
     _onInfo(client, serviceName, info) {
         if (this.serviceIsForeground(serviceName)) {
             this._queueMessage(serviceName, info, MessageType.INFO);
-        } else if (this.serviceIsFingerprint(serviceName)) {
+        } else if (this.serviceIsFingerprint(serviceName) && this._canRetry()) {
             // We don't show fingerprint messages directly since it's
             // not the main auth service. Instead we use the messages
             // as a cue to display our own message.
-            if (this._fingerprintReaderType === FingerprintReaderType.SWIPE) {
-                // Translators: this message is shown below the password entry field
-                // to indicate the user can swipe their finger on the fingerprint reader
-                this._queueMessage(serviceName, _('(or swipe finger across reader)'),
-                    MessageType.HINT);
-            } else {
-                // Translators: this message is shown below the password entry field
-                // to indicate the user can place their finger on the fingerprint reader instead
-                this._queueMessage(serviceName, _('(or place finger on reader)'),
-                    MessageType.HINT);
-            }
+
+            // Translators: this message is shown below the password entry field
+            // to indicate the user can swipe their finger instead
+            this._queueMessage(serviceName, _('(or swipe finger)'), MessageType.HINT);
         }
     }
 
@@ -603,33 +521,12 @@ var ShellUserVerifier = class {
         if (!this.serviceIsForeground(serviceName) && !isFingerprint)
             return;
 
-        this._queuePriorityMessage(serviceName, problem, MessageType.ERROR);
-
+        this._queueMessage(serviceName, problem, MessageType.ERROR);
         if (isFingerprint) {
-            // pam_fprintd allows the user to retry multiple (maybe even infinite!
-            // times before failing the authentication conversation.
-            // We don't want this behavior to bypass the max-tries setting the user has set,
-            // so we count the problem messages to know how many times the user has failed.
-            // Once we hit the max number of failures we allow, it's time to failure the
-            // conversation from our side. We can't do that right away, however, because
-            // we may drop pending messages coming from pam_fprintd. In order to make sure
-            // the user sees everything, we queue the failure up to get handled in the
-            // near future, after we've finished up the current round of messages.
             this._failCounter++;
 
-            if (!this._canRetry()) {
-                if (this._fingerprintFailedId)
-                    GLib.source_remove(this._fingerprintFailedId);
-
-                const cancellable = this._cancellable;
-                this._fingerprintFailedId = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
-                    FINGERPRINT_ERROR_TIMEOUT_WAIT, () => {
-                        this._fingerprintFailedId = 0;
-                        if (!cancellable.is_cancelled())
-                            this._verificationFailed(serviceName, false);
-                        return GLib.SOURCE_REMOVE;
-                    });
-            }
+            if (!this._canRetry())
+                this._verificationFailed(serviceName, false);
         }
     }
 
@@ -674,10 +571,9 @@ var ShellUserVerifier = class {
         this._onReset();
     }
 
-    _retry(serviceName) {
-        this._hold = new Batch.Hold();
-        this._connectSignals();
-        this._startService(serviceName);
+    _retry() {
+        this.cancel();
+        this.begin(this._userName, new Batch.Hold());
     }
 
     _canRetry() {
@@ -685,23 +581,26 @@ var ShellUserVerifier = class {
             (this._reauthOnly || this._failCounter < this.allowedFailures);
     }
 
-    _verificationFailed(serviceName, shouldRetry) {
-        if (serviceName === FINGERPRINT_SERVICE_NAME) {
-            if (this._fingerprintFailedId)
-                GLib.source_remove(this._fingerprintFailedId);
-        }
-
+    _verificationFailed(serviceName, retry) {
         // For Not Listed / enterprise logins, immediately reset
         // the dialog
         // Otherwise, when in login mode we allow ALLOWED_FAILURES attempts.
         // After that, we go back to the welcome screen.
-        this._filterServiceMessages(serviceName, MessageType.ERROR);
 
-        const doneTrying = !shouldRetry || !this._canRetry();
+        const canRetry = retry && this._canRetry();
 
-        if (doneTrying) {
-            this._disconnectSignals();
-
+        if (canRetry) {
+            if (!this.hasPendingMessages) {
+                this._retry();
+            } else {
+                const cancellable = this._cancellable;
+                let signalId = this.connect('no-more-messages', () => {
+                    this.disconnect(signalId);
+                    if (!cancellable.is_cancelled())
+                        this._retry();
+                });
+            }
+        } else {
             // eslint-disable-next-line no-lonely-if
             if (!this.hasPendingMessages) {
                 this._cancelAndReset();
@@ -715,18 +614,7 @@ var ShellUserVerifier = class {
             }
         }
 
-        this.emit('verification-failed', serviceName, !doneTrying);
-
-        if (!this.hasPendingMessages) {
-            this._retry(serviceName);
-        } else {
-            const cancellable = this._cancellable;
-            let signalId = this.connect('no-more-messages', () => {
-                this.disconnect(signalId);
-                if (!cancellable.is_cancelled())
-                    this._retry(serviceName);
-            });
-        }
+        this.emit('verification-failed', serviceName, canRetry);
     }
 
     _onServiceUnavailable(_client, serviceName, errorMessage) {
@@ -751,8 +639,6 @@ var ShellUserVerifier = class {
             this._verificationFailed(serviceName, false);
             return;
         }
-
-        this._filterServiceMessages(serviceName, MessageType.ERROR);
 
         if (this._unavailableServices.has(serviceName))
             return;

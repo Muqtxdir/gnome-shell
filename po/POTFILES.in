@@ -47,9 +47,7 @@ js/ui/panel.js
 js/ui/popupMenu.js
 js/ui/runDialog.js
 js/ui/screenShield.js
-js/ui/screenshot.js
 js/ui/search.js
-js/ui/searchController.js
 js/ui/shellEntry.js
 js/ui/shellMountOperation.js
 js/ui/status/accessibility.js
@@ -68,7 +66,7 @@ js/ui/status/thunderbolt.js
 js/ui/status/volume.js
 js/ui/switchMonitor.js
 js/ui/unlockDialog.js
-js/ui/welcomeDialog.js
+js/ui/viewSelector.js
 js/ui/windowAttentionHandler.js
 js/ui/windowManager.js
 js/ui/windowMenu.js
@@ -96,7 +94,5 @@ subprojects/extensions-tool/src/command-prefs.c
 subprojects/extensions-tool/src/command-reset.c
 subprojects/extensions-tool/src/command-uninstall.c
 subprojects/extensions-tool/src/main.c
-subprojects/extensions-tool/src/templates/00-plain.desktop.in
-subprojects/extensions-tool/src/templates/indicator.desktop.in
 # Please do not remove this file from POTFILES.in. Run "git submodule init && git submodule update" to get it.
 subprojects/gvc/gvc-mixer-control.c

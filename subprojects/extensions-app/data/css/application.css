@@ -8,5 +8,4 @@
   -gtk-icon-transform: rotate(-0.25turn);
 }
 
-image.error { color: @error_color; }
 image.warning { color: @warning_color; }

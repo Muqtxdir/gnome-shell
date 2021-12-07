@@ -79,7 +79,7 @@
 
 @function draw_button_hilight_color($c) {
 //
-// calculate the right top highlight color for buttons
+// calculate the right top hilight color for buttons
 //
 // $c: base color;
 //
@@ -218,8 +218,7 @@
 
   &:drop {
     .overview-icon {
-      border: 2px solid $selected_bg_color; //already 2px transparent so no jumping
-      background-color: transparentize($selected_bg_color, .8);
+      background-color: transparentize($selected_bg_color, .15);
     }
   }
 

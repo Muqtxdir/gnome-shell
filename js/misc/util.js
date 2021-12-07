@@ -1,9 +1,9 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 /* exported findUrls, spawn, spawnCommandLine, spawnApp, trySpawnCommandLine,
             formatTime, formatTimeSpan, createTimeLabel, insertSorted,
-            ensureActorVisibleInScrollView, wiggle, lerp, GNOMEversionCompare */
+            makeCloseButton, ensureActorVisibleInScrollView, wiggle */
 
-const { Clutter, Gio, GLib, Shell, St, GnomeDesktop } = imports.gi;
+const { Clutter, Gio, GLib, GObject, Shell, St, GnomeDesktop } = imports.gi;
 const Gettext = imports.gettext;
 
 const Main = imports.ui.main;
@@ -363,6 +363,51 @@ function insertSorted(array, val, cmp) {
     return pos;
 }
 
+var CloseButton = GObject.registerClass(
+class CloseButton extends St.Button {
+    _init(boxpointer) {
+        super._init({
+            style_class: 'notification-close',
+            x_expand: true,
+            y_expand: true,
+            x_align: Clutter.ActorAlign.END,
+            y_align: Clutter.ActorAlign.START,
+        });
+
+        this._boxPointer = boxpointer;
+        if (boxpointer)
+            this._boxPointer.connect('arrow-side-changed', this._sync.bind(this));
+    }
+
+    _computeBoxPointerOffset() {
+        if (!this._boxPointer || !this._boxPointer.get_stage())
+            return 0;
+
+        let side = this._boxPointer.arrowSide;
+        if (side == St.Side.TOP)
+            return this._boxPointer.getArrowHeight();
+        else
+            return 0;
+    }
+
+    _sync() {
+        let themeNode = this.get_theme_node();
+
+        let offY = this._computeBoxPointerOffset();
+        this.translation_x = themeNode.get_length('-shell-close-overlap-x');
+        this.translation_y = themeNode.get_length('-shell-close-overlap-y') + offY;
+    }
+
+    vfunc_style_changed() {
+        this._sync();
+        super.vfunc_style_changed();
+    }
+});
+
+function makeCloseButton(boxpointer) {
+    return new CloseButton(boxpointer);
+}
+
 function ensureActorVisibleInScrollView(scrollView, actor) {
     let adjustment = scrollView.vscroll.adjustment;
     let [value, lower_, upper, stepIncrement_, pageIncrement_, pageSize] = adjustment.get_values();
@@ -370,7 +415,7 @@ function ensureActorVisibleInScrollView(scrollView, actor) {
     let offset = 0;
     let vfade = scrollView.get_effect("fade");
     if (vfade)
-        offset = vfade.fade_margins.top;
+        offset = vfade.vfade_offset;
 
     let box = actor.get_allocation_box();
     let y1 = box.y1, y2 = box.y2;
@@ -434,46 +479,4 @@ function wiggle(actor, params) {
             });
         },
     });
-}
-
-function lerp(start, end, progress) {
-    return start + progress * (end - start);
-}
-
-// _GNOMEversionToNumber:
-// @version: a GNOME version element
-//
-// Like Number() but returns sortable values for special-cases
-// 'alpha' and 'beta'. Returns NaN for unhandled 'versions'.
-function _GNOMEversionToNumber(version) {
-    let ret = Number(version);
-    if (!isNaN(ret))
-        return ret;
-    if (version === 'alpha')
-        return -2;
-    if (version === 'beta')
-        return -1;
-    return ret;
-}
-
-// GNOMEversionCompare:
-// @version1: a string containing a GNOME version
-// @version2: a string containing another GNOME version
-//
-// Returns an integer less than, equal to, or greater than
-// zero, if version1 is older, equal or newer than version2
-function GNOMEversionCompare(version1, version2) {
-    const v1Array = version1.split('.');
-    const v2Array = version2.split('.');
-
-    for (let i = 0; i < Math.max(v1Array.length, v2Array.length); i++) {
-        let elemV1 = _GNOMEversionToNumber(v1Array[i] || '0');
-        let elemV2 = _GNOMEversionToNumber(v2Array[i] || '0');
-        if (elemV1 < elemV2)
-            return -1;
-        if (elemV1 > elemV2)
-            return 1;
-    }
-
-    return 0;
 }

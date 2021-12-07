@@ -1,5 +1,5 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
-/* exported PresenceStatus, Presence, Inhibitor, SessionManager, InhibitFlags */
+/* exported PresenceStatus, Presence, Inhibitor, SessionManager */
 
 const Gio = imports.gi.Gio;
 
@@ -35,11 +35,3 @@ var SessionManagerProxy = Gio.DBusProxy.makeProxyWrapper(SessionManagerIface);
 function SessionManager(initCallback, cancellable) {
     return new SessionManagerProxy(Gio.DBus.session, 'org.gnome.SessionManager', '/org/gnome/SessionManager', initCallback, cancellable);
 }
-
-var InhibitFlags = {
-    LOGOUT: 1 << 0,
-    SWITCH: 1 << 1,
-    SUSPEND: 1 << 2,
-    IDLE: 1 << 3,
-    AUTOMOUNT: 1 << 4,
-};

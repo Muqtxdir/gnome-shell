@@ -44,7 +44,7 @@ var AuthenticationDialog = GObject.registerClass({
         let bodyContent = new Dialog.MessageDialogContent();
 
         if (userNames.length > 1) {
-            log('polkitAuthenticationAgent: Received %d '.format(userNames.length) +
+            log('polkitAuthenticationAgent: Received %d'.format(userNames.length) +
                 'identities that can be used for authentication. Only ' +
                 'considering one.');
         }
@@ -65,6 +65,7 @@ var AuthenticationDialog = GObject.registerClass({
 
         this._userAvatar = new UserWidget.Avatar(this._user, {
             iconSize: DIALOG_ICON_SIZE,
+            styleClass: 'polkit-dialog-user-icon',
         });
         this._userAvatar.x_align = Clutter.ActorAlign.CENTER;
         userBox.add_child(this._userAvatar);
@@ -238,6 +239,7 @@ var AuthenticationDialog = GObject.registerClass({
         /* Yay, all done */
         if (gainedAuthorization) {
             this._emitDone(false);
+
         } else {
             /* Unless we are showing an existing error message from the PAM
              * module (the PAM module could be reporting the authentication
@@ -328,13 +330,11 @@ var AuthenticationDialog = GObject.registerClass({
             this._sessionRequestTimeoutId = 0;
 
             if (this.state != ModalDialog.State.OPENED)
-                return GLib.SOURCE_REMOVE;
+                return;
 
             this._passwordEntry.hide();
             this._cancelButton.grab_key_focus();
             this._okButton.reactive = false;
-
-            return GLib.SOURCE_REMOVE;
         };
 
         if (delay) {
@@ -378,13 +378,6 @@ var AuthenticationDialog = GObject.registerClass({
             this._mode = DialogMode.AUTH;
             this._initiateSession();
         }
-    }
-
-    close(timestamp) {
-        // Ensure cleanup if the dialog was never shown
-        if (this.state === ModalDialog.State.CLOSED)
-            this._onDialogClosed();
-        super.close(timestamp);
     }
 
     cancel() {

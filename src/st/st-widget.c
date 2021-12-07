@@ -124,6 +124,7 @@ enum
 {
   STYLE_CHANGED,
   POPUP_MENU,
+  RESOURCE_SCALE_CHANGED,
 
   LAST_SIGNAL
 };
@@ -141,15 +142,6 @@ static gboolean st_widget_real_navigate_focus (StWidget         *widget,
 
 static AtkObject * st_widget_get_accessible (ClutterActor *actor);
 static gboolean    st_widget_has_accessible (ClutterActor *actor);
-
-static void
-st_widget_update_insensitive (StWidget *widget)
-{
-  if (clutter_actor_get_reactive (CLUTTER_ACTOR (widget)))
-    st_widget_remove_style_pseudo_class (widget, "insensitive");
-  else
-    st_widget_add_style_pseudo_class (widget, "insensitive");
-}
 
 static void
 st_widget_set_property (GObject      *gobject,
@@ -254,14 +246,6 @@ st_widget_get_property (GObject    *gobject,
       G_OBJECT_WARN_INVALID_PROPERTY_ID (gobject, prop_id, pspec);
       break;
     }
-}
-
-static void
-st_widget_constructed (GObject *gobject)
-{
-  G_OBJECT_CLASS (st_widget_parent_class)->constructed (gobject);
-
-  st_widget_update_insensitive (ST_WIDGET (gobject));
 }
 
 static void
@@ -387,7 +371,8 @@ st_widget_get_preferred_height (ClutterActor *self,
 
 static void
 st_widget_allocate (ClutterActor          *actor,
-                    const ClutterActorBox *box)
+                    const ClutterActorBox *box,
+                    ClutterAllocationFlags flags)
 {
   StThemeNode *theme_node = st_widget_get_theme_node (ST_WIDGET (actor));
   ClutterActorBox content_box;
@@ -398,7 +383,7 @@ st_widget_allocate (ClutterActor          *actor,
    * manager, meaning that we can't modify it for children only.
    */
 
-  clutter_actor_set_allocation (actor, box);
+  clutter_actor_set_allocation (actor, box, flags);
 
   st_theme_node_get_content_box (theme_node, box, &content_box);
 
@@ -406,7 +391,8 @@ st_widget_allocate (ClutterActor          *actor,
    * currently installed layout manager */
   clutter_layout_manager_allocate (clutter_actor_get_layout_manager (actor),
                                    CLUTTER_CONTAINER (actor),
-                                   &content_box);
+                                   &content_box,
+                                   flags);
 }
 
 /**
@@ -428,7 +414,8 @@ st_widget_paint_background (StWidget            *widget,
   float resource_scale;
   guint8 opacity;
 
-  resource_scale = clutter_actor_get_resource_scale (CLUTTER_ACTOR (widget));
+  if (!st_widget_get_resource_scale (widget, &resource_scale))
+    return;
 
   framebuffer = clutter_paint_context_get_framebuffer (paint_context);
   theme_node = st_widget_get_theme_node (widget);
@@ -579,7 +566,7 @@ get_root_theme_node (ClutterStage *stage)
  * Note: it is a fatal error to call this on a widget that is
  *  not been added to a stage.
  *
- * Returns: (transfer none): the theme node for the widget.
+ * Return value: (transfer none): the theme node for the widget.
  *   This is owned by the widget. When attributes of the widget
  *   or the environment that affect the styling change (for example
  *   the style_class property of the widget), it will be recreated,
@@ -616,11 +603,8 @@ st_widget_get_theme_node (StWidget *widget)
 
       if (stage == NULL)
         {
-          g_autofree char *desc = st_describe_actor (CLUTTER_ACTOR (widget));
-
           g_critical ("st_widget_get_theme_node called on the widget %s which is not in the stage.",
-                      desc);
-
+                      st_describe_actor (CLUTTER_ACTOR (widget)));
           return g_object_new (ST_TYPE_THEME_NODE, NULL);
         }
 
@@ -670,7 +654,7 @@ st_widget_get_theme_node (StWidget *widget)
  * node hasn't been computed. If %NULL is returned, then ::style-changed
  * will be reliably emitted before the widget is allocated or painted.
  *
- * Returns: (transfer none): the theme node for the widget.
+ * Return value: (transfer none): the theme node for the widget.
  *   This is owned by the widget. When attributes of the widget
  *   or the environment that affect the styling change (for example
  *   the style_class property of the widget), it will be recreated,
@@ -794,16 +778,6 @@ st_widget_get_paint_volume (ClutterActor *self,
   if (!clutter_actor_get_clip_to_allocation (self))
     {
       ClutterActor *child;
-      StShadow *shadow_spec = st_theme_node_get_text_shadow (theme_node);
-
-      if (shadow_spec)
-        {
-          ClutterActorBox shadow_box;
-
-          st_shadow_get_box (shadow_spec, &alloc_box, &shadow_box);
-          clutter_paint_volume_union_box (volume, &shadow_box);
-        }
-
       /* Based on ClutterGroup/ClutterBox; include the children's
        * paint volumes, since they may paint outside our allocation.
        */
@@ -846,20 +820,6 @@ st_widget_real_get_focus_chain (StWidget *widget)
 }
 
 static void
-st_widget_resource_scale_changed (ClutterActor *actor)
-{
-  StWidget *widget = ST_WIDGET (actor);
-  StWidgetPrivate *priv = st_widget_get_instance_private (widget);
-  int i;
-
-  for (i = 0; i < G_N_ELEMENTS (priv->paint_states); i++)
-    st_theme_node_paint_state_invalidate (&priv->paint_states[i]);
-
-  if (CLUTTER_ACTOR_CLASS (st_widget_parent_class)->resource_scale_changed)
-    CLUTTER_ACTOR_CLASS (st_widget_parent_class)->resource_scale_changed (actor);
-}
-
-static void
 st_widget_class_init (StWidgetClass *klass)
 {
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
@@ -867,7 +827,6 @@ st_widget_class_init (StWidgetClass *klass)
 
   gobject_class->set_property = st_widget_set_property;
   gobject_class->get_property = st_widget_get_property;
-  gobject_class->constructed = st_widget_constructed;
   gobject_class->dispose = st_widget_dispose;
   gobject_class->finalize = st_widget_finalize;
 
@@ -888,8 +847,6 @@ st_widget_class_init (StWidgetClass *klass)
 
   actor_class->get_accessible = st_widget_get_accessible;
   actor_class->has_accessible = st_widget_has_accessible;
-
-  actor_class->resource_scale_changed = st_widget_resource_scale_changed;
 
   klass->style_changed = st_widget_real_style_changed;
   klass->navigate_focus = st_widget_real_navigate_focus;
@@ -977,7 +934,7 @@ st_widget_class_init (StWidgetClass *klass)
                            ST_PARAM_READWRITE);
 
   /**
-   * StWidget:label-actor:
+   * ClutterActor:label-actor:
    *
    * An actor that labels this widget.
    */
@@ -1034,13 +991,29 @@ st_widget_class_init (StWidgetClass *klass)
    * StWidget::popup-menu:
    * @widget: the #StWidget
    *
-   * Emitted when the user has requested a context menu (eg, via a keybinding)
+   * Emitted when the user has requested a context menu (eg, via a
+   * keybinding)
    */
   signals[POPUP_MENU] =
     g_signal_new ("popup-menu",
                   G_TYPE_FROM_CLASS (klass),
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (StWidgetClass, popup_menu),
+                  NULL, NULL, NULL,
+                  G_TYPE_NONE, 0);
+
+  /**
+   * StWidget::resource-scale-changed:
+   * @widget: the #StWidget
+   *
+   * Emitted when the paint scale that the widget will be painted as
+   * changed.
+   */
+  signals[RESOURCE_SCALE_CHANGED] =
+    g_signal_new ("resource-scale-changed",
+                  G_TYPE_FROM_CLASS (klass),
+                  G_SIGNAL_RUN_LAST,
+                  G_STRUCT_OFFSET (StWidgetClass, resource_scale_changed),
                   NULL, NULL, NULL,
                   G_TYPE_NONE, 0);
 }
@@ -1415,8 +1388,8 @@ st_widget_set_style (StWidget  *actor,
  *
  * Get the current inline style string. See st_widget_set_style().
  *
- * Returns: (transfer none) (nullable): The inline style string, or %NULL. The
- *   string is owned by the #StWidget and should not be modified or freed.
+ * Returns: The inline style string, or %NULL. The string is owned by the
+ * #StWidget and should not be modified or freed.
  */
 const gchar*
 st_widget_get_style (StWidget *actor)
@@ -1424,6 +1397,23 @@ st_widget_get_style (StWidget *actor)
   g_return_val_if_fail (ST_IS_WIDGET (actor), NULL);
 
   return ST_WIDGET_PRIVATE (actor)->inline_style;
+}
+
+/**
+ * st_widget_get_resource_scale:
+ * @widget: A #StWidget
+ * @resource_scale: (out): return location for the resource scale
+ *
+ * Retrieves the resource scale for this #StWidget, if available.
+ *
+ * The resource scale refers to the scale the actor should use for its resources.
+ */
+gboolean
+st_widget_get_resource_scale (StWidget *widget,
+                              float    *resource_scale)
+{
+  return clutter_actor_get_resource_scale (CLUTTER_ACTOR (widget),
+                                           resource_scale);
 }
 
 static void
@@ -1493,13 +1483,33 @@ st_widget_name_notify (StWidget   *widget,
 }
 
 static void
+st_widget_resource_scale_notify (StWidget   *widget,
+                                 GParamSpec *pspec,
+                                 gpointer    data)
+{
+  StWidgetPrivate *priv = st_widget_get_instance_private (widget);
+  int i;
+
+  for (i = 0; i < G_N_ELEMENTS (priv->paint_states); i++)
+    st_theme_node_paint_state_invalidate (&priv->paint_states[i]);
+
+  g_signal_emit (widget, signals[RESOURCE_SCALE_CHANGED], 0);
+
+  if (clutter_actor_is_mapped (CLUTTER_ACTOR (widget)))
+    clutter_actor_queue_redraw (CLUTTER_ACTOR (widget));
+}
+
+static void
 st_widget_reactive_notify (StWidget   *widget,
                            GParamSpec *pspec,
                            gpointer    data)
 {
   StWidgetPrivate *priv = st_widget_get_instance_private (widget);
 
-  st_widget_update_insensitive (widget);
+  if (clutter_actor_get_reactive (CLUTTER_ACTOR (widget)))
+    st_widget_remove_style_pseudo_class (widget, "insensitive");
+  else
+    st_widget_add_style_pseudo_class (widget, "insensitive");
 
   if (priv->track_hover)
     st_widget_sync_hover(widget);
@@ -1640,6 +1650,7 @@ st_widget_init (StWidget *actor)
 
   /* connect style changed */
   g_signal_connect (actor, "notify::name", G_CALLBACK (st_widget_name_notify), NULL);
+  g_signal_connect (actor, "notify::resource-scale", G_CALLBACK (st_widget_resource_scale_notify), NULL);
   g_signal_connect (actor, "notify::reactive", G_CALLBACK (st_widget_reactive_notify), NULL);
 
   g_signal_connect (actor, "notify::visible", G_CALLBACK (st_widget_visible_notify), NULL);
@@ -1711,8 +1722,7 @@ st_widget_recompute_style (StWidget    *widget,
            */
 
           priv->transition_animation =
-            st_theme_node_transition_new (CLUTTER_ACTOR (widget),
-                                          old_theme_node,
+            st_theme_node_transition_new (old_theme_node,
                                           new_theme_node,
                                           current_paint_state (widget),
                                           transition_duration);
@@ -1732,20 +1742,6 @@ st_widget_recompute_style (StWidget    *widget,
 
   if (!paint_equal)
     {
-      static gboolean invalidate_paint_volume_valid = FALSE;
-      static void (* invalidate_paint_volume) (ClutterActor *) = NULL;
-
-      if (!invalidate_paint_volume_valid)
-        {
-          g_module_symbol (g_module_open (NULL, G_MODULE_BIND_LAZY),
-                           "clutter_actor_invalidate_paint_volume",
-                           (gpointer *)&invalidate_paint_volume);
-          invalidate_paint_volume_valid = TRUE;
-        }
-
-      if (invalidate_paint_volume)
-        invalidate_paint_volume (CLUTTER_ACTOR (widget));
-
       next_paint_state (widget);
 
       if (!st_theme_node_paint_equal (new_theme_node, current_paint_state (widget)->node))
@@ -1783,8 +1779,8 @@ st_widget_recompute_style (StWidget    *widget,
  * st_widget_ensure_style:
  * @widget: A #StWidget
  *
- * Ensures that @widget has read its style information and propagated any
- * changes to its children.
+ * Ensures that @widget has read its style information.
+ *
  */
 void
 st_widget_ensure_style (StWidget *widget)
@@ -1846,7 +1842,7 @@ st_widget_set_track_hover (StWidget *widget,
  * st_widget_get_track_hover:
  * @widget: A #StWidget
  *
- * Returns the current value of the #StWidget:track-hover property. See
+ * Returns the current value of the track-hover property. See
  * st_widget_set_track_hover() for more information.
  *
  * Returns: current value of track-hover on @widget
@@ -1904,17 +1900,12 @@ void
 st_widget_sync_hover (StWidget *widget)
 {
   ClutterInputDevice *pointer;
-  ClutterActor *stage;
   ClutterActor *pointer_actor;
   ClutterSeat *seat;
 
   seat = clutter_backend_get_default_seat (clutter_get_default_backend ());
   pointer = clutter_seat_get_pointer (seat);
-  stage = clutter_actor_get_stage (CLUTTER_ACTOR (widget));
-  if (!stage)
-    return;
-
-  pointer_actor = clutter_stage_get_device_actor (CLUTTER_STAGE (stage), pointer, NULL);
+  pointer_actor = clutter_input_device_get_pointer_actor (pointer);
   if (pointer_actor && clutter_actor_get_reactive (CLUTTER_ACTOR (widget)))
     st_widget_set_hover (widget, clutter_actor_contains (CLUTTER_ACTOR (widget), pointer_actor));
   else
@@ -1985,7 +1976,7 @@ st_widget_get_can_focus (StWidget *widget)
  * st_widget_popup_menu:
  * @self: A #StWidget
  *
- * Asks the widget to pop-up a context menu by emitting #StWidget::popup-menu.
+ * Asks the widget to pop-up a context menu.
  */
 void
 st_widget_popup_menu (StWidget *self)
@@ -2272,7 +2263,7 @@ st_widget_real_navigate_focus (StWidget         *widget,
  * time, using a %NULL @from, which should cause it to reset the focus
  * to the first available widget in the given direction.
  *
- * Returns: %TRUE if clutter_actor_grab_key_focus() has been
+ * Return value: %TRUE if clutter_actor_grab_key_focus() has been
  * called on an actor. %FALSE if not.
  */
 gboolean
@@ -2318,7 +2309,7 @@ append_actor_text (GString      *desc,
  * includes the class name and actor name (if any), plus if @actor
  * is an #StWidget, its style class and pseudo class names.
  *
- * Returns: the debug name.
+ * Return value: the debug name.
  */
 char *
 st_describe_actor (ClutterActor *actor)
@@ -2393,7 +2384,7 @@ st_describe_actor (ClutterActor *actor)
  *
  * Gets the label that identifies @widget if it is defined
  *
- * Returns: (transfer none): the label that identifies the widget
+ * Return value: (transfer none): the label that identifies the widget
  */
 ClutterActor *
 st_widget_get_label_actor (StWidget *widget)
@@ -2476,7 +2467,7 @@ st_widget_set_accessible_name (StWidget    *widget,
  * Gets the accessible name for this widget. See
  * st_widget_set_accessible_name() for more information.
  *
- * Returns: a character string representing the accessible name
+ * Return value: a character string representing the accessible name
  * of the widget.
  */
 const gchar *
@@ -2531,7 +2522,7 @@ st_widget_set_accessible_role (StWidget *widget,
  * Gets the #AtkRole for this widget. See
  * st_widget_set_accessible_role() for more information.
  *
- * Returns: accessible #AtkRole for this widget
+ * Return value: accessible #AtkRole for this widget
  */
 AtkRole
 st_widget_get_accessible_role (StWidget *widget)

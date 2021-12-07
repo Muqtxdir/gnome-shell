@@ -111,5 +111,6 @@ var SmartcardManager = class {
 
         return true;
     }
+
 };
 Signals.addSignalMethods(SmartcardManager.prototype);

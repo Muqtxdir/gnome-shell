@@ -3,7 +3,6 @@
 
 const { Atk, Clutter, GDesktopEnums, Gio,
         GLib, GObject, Gtk, Meta, Pango, Rsvg, St } = imports.gi;
-const ByteArray = imports.byteArray;
 const Signals = imports.signals;
 
 const Main = imports.ui.main;
@@ -298,13 +297,24 @@ var PadDiagram = GObject.registerClass({
     _init(params) {
         let file = Gio.File.new_for_uri('resource:///org/gnome/shell/theme/pad-osd.css');
         let [success_, css] = file.load_contents(null);
-        css = ByteArray.toString(css);
+        if (css instanceof Uint8Array)
+            css = imports.byteArray.toString(css);
         this._curEdited = null;
         this._prevEdited = null;
         this._css = css;
         this._labels = [];
         this._activeButtons = [];
         super._init(params);
+    }
+
+    // eslint-disable-next-line camelcase
+    get left_handed() {
+        return this._leftHanded;
+    }
+
+    // eslint-disable-next-line camelcase
+    set left_handed(leftHanded) {
+        this._leftHanded = leftHanded;
     }
 
     get image() {
@@ -322,11 +332,13 @@ var PadDiagram = GObject.registerClass({
         this._initLabels();
     }
 
-    get editorActor() {
+    // eslint-disable-next-line camelcase
+    get editor_actor() {
         return this._editorActor;
     }
 
-    set editorActor(actor) {
+    // eslint-disable-next-line camelcase
+    set editor_actor(actor) {
         actor.hide();
         this._editorActor = actor;
         this.add_actor(actor);
@@ -392,7 +404,8 @@ var PadDiagram = GObject.registerClass({
         istream.add_bytes(new GLib.Bytes(svgData));
 
         return Rsvg.Handle.new_from_stream_sync(istream,
-            Gio.File.new_for_path(this._imagePath), 0, null);
+                                                Gio.File.new_for_path(this._imagePath),
+                                                0, null);
     }
 
     _updateDiagramScale() {
@@ -423,11 +436,11 @@ var PadDiagram = GObject.registerClass({
 
         childBox.y1 = y - natHeight / 2;
         childBox.y2 = y + natHeight / 2;
-        child.allocate(childBox);
+        child.allocate(childBox, 0);
     }
 
-    vfunc_allocate(box) {
-        super.vfunc_allocate(box);
+    vfunc_allocate(box, flags) {
+        super.vfunc_allocate(box, flags);
         if (this._handle === null)
             return;
 
@@ -458,7 +471,7 @@ var PadDiagram = GObject.registerClass({
         cr.save();
         cr.translate(width / 2, height / 2);
         cr.scale(this._scale, this._scale);
-        if (this.leftHanded)
+        if (this._leftHanded)
             cr.rotate(Math.PI);
         cr.translate(-dimensions.width / 2, -dimensions.height / 2);
         this._handle.render_cairo(cr);
@@ -487,7 +500,7 @@ var PadDiagram = GObject.registerClass({
         else
             direction = RTL;
 
-        if (this.leftHanded) {
+        if (this._leftHanded) {
             direction = 1 - direction;
             pos.x = this._imageWidth - pos.x;
             pos.y = this._imageHeight - pos.y;
@@ -660,6 +673,7 @@ var PadOsd = GObject.registerClass({
                 // the same group.
                 this._groupPads.splice(this._groupPads.indexOf(device), 1);
                 this._updatePadChooser();
+
             }
         });
 
@@ -757,7 +771,7 @@ var PadOsd = GObject.registerClass({
 
     _getActionText(type, number) {
         let str = global.display.get_pad_action_label(this.padDevice, type, number);
-        return str ?? _('None');
+        return str ? str : _("None");
     }
 
     _updateActionLabels() {
@@ -874,7 +888,7 @@ var PadOsd = GObject.registerClass({
             if (this._followUpActionEdition(str))
                 return;
 
-            this._padDiagram.stopEdition(false, str ?? _('None'));
+            this._padDiagram.stopEdition(false, str ? str : _("None"));
             this._editedAction = null;
         }
 

@@ -29,9 +29,14 @@
  * applications to set further properties.
  *
  * #StEntry supports the following pseudo style states:
- *
- * - `focus`: the widget has focus
- * - `indeterminate`: the widget is showing the hint text or actor
+ * <itemizedlist>
+ *  <listitem>
+ *   <para>focus: the widget has focus</para>
+ *  </listitem>
+ *  <listitem>
+ *   <para>indeterminate: the widget is showing the hint text or actor</para>
+ *  </listitem>
+ * </itemizedlist>
  */
 
 #ifdef HAVE_CONFIG_H
@@ -243,6 +248,8 @@ st_entry_style_changed (StWidget *self)
   StEntryPrivate *priv = ST_ENTRY_PRIV (self);
   StThemeNode *theme_node;
   ClutterColor color;
+  const PangoFontDescription *font;
+  gchar *font_string, *font_name;
   gdouble size;
 
   cogl_clear_object (&priv->text_shadow_material);
@@ -262,6 +269,15 @@ st_entry_style_changed (StWidget *self)
 
   if (st_theme_node_lookup_color (theme_node, "selected-color", TRUE, &color))
     clutter_text_set_selected_text_color (CLUTTER_TEXT (priv->entry), &color);
+
+  font = st_theme_node_get_font (theme_node);
+  font_string = pango_font_description_to_string (font);
+  font_name = g_strdup (clutter_text_get_font_name (CLUTTER_TEXT (priv->entry)));
+  clutter_text_set_font_name (CLUTTER_TEXT (priv->entry), font_string);
+  if (strcmp (clutter_text_get_font_name (CLUTTER_TEXT (priv->entry)), font_name) != 0)
+    clutter_actor_queue_relayout (priv->entry);
+  g_free (font_string);
+  g_free (font_name);
 
   ST_WIDGET_CLASS (st_entry_parent_class)->style_changed (self);
 }
@@ -400,7 +416,8 @@ st_entry_get_preferred_height (ClutterActor *actor,
 
 static void
 st_entry_allocate (ClutterActor          *actor,
-                   const ClutterActorBox *box)
+                   const ClutterActorBox *box,
+                   ClutterAllocationFlags flags)
 {
   StEntryPrivate *priv = ST_ENTRY_PRIV (actor);
   StThemeNode *theme_node = st_widget_get_theme_node (ST_WIDGET (actor));
@@ -424,7 +441,7 @@ st_entry_allocate (ClutterActor          *actor,
       right_icon = priv->secondary_icon;
     }
 
-  clutter_actor_set_allocation (actor, box);
+  clutter_actor_set_allocation (actor, box, flags);
 
   st_theme_node_get_content_box (theme_node, box, &content_box);
 
@@ -444,7 +461,7 @@ st_entry_allocate (ClutterActor          *actor,
       icon_box.y1 = (int) (content_box.y1 + avail_h / 2 - icon_h / 2);
       icon_box.y2 = icon_box.y1 + icon_h;
 
-      clutter_actor_allocate (left_icon, &icon_box);
+      clutter_actor_allocate (left_icon, &icon_box, flags);
 
       /* reduce the size for the entry */
       child_box.x1 = MIN (child_box.x2, child_box.x1 + icon_w + priv->spacing);
@@ -461,7 +478,7 @@ st_entry_allocate (ClutterActor          *actor,
       icon_box.y1 = (int) (content_box.y1 + avail_h / 2 - icon_h / 2);
       icon_box.y2 = icon_box.y1 + icon_h;
 
-      clutter_actor_allocate (right_icon, &icon_box);
+      clutter_actor_allocate (right_icon, &icon_box, flags);
 
       /* reduce the size for the entry */
       child_box.x2 = MAX (child_box.x1, child_box.x2 - icon_w - priv->spacing);
@@ -485,7 +502,7 @@ st_entry_allocate (ClutterActor          *actor,
       hint_box.y1 = ceil (content_box.y1 + avail_h / 2 - hint_h / 2);
       hint_box.y2 = hint_box.y1 + hint_h;
 
-      clutter_actor_allocate (priv->hint_actor, &hint_box);
+      clutter_actor_allocate (priv->hint_actor, &hint_box, flags);
     }
 
   clutter_actor_get_preferred_height (priv->entry, child_box.x2 - child_box.x1,
@@ -496,7 +513,7 @@ st_entry_allocate (ClutterActor          *actor,
   child_box.y1 = (int) (content_box.y1 + avail_h / 2 - entry_h / 2);
   child_box.y2 = child_box.y1 + entry_h;
 
-  clutter_actor_allocate (priv->entry, &child_box);
+  clutter_actor_allocate (priv->entry, &child_box, flags);
 }
 
 static void
@@ -881,11 +898,6 @@ st_entry_class_init (StEntryClass *klass)
   widget_class->navigate_focus = st_entry_navigate_focus;
   widget_class->get_accessible_type = st_entry_accessible_get_type;
 
-  /**
-   * StEntry:clutter-text:
-   *
-   * The internal #ClutterText actor supporting the #StEntry.
-   */
   props[PROP_CLUTTER_TEXT] =
     g_param_spec_object ("clutter-text",
                          "Clutter Text",
@@ -893,11 +905,6 @@ st_entry_class_init (StEntryClass *klass)
                          CLUTTER_TYPE_TEXT,
                          ST_PARAM_READABLE);
 
-  /**
-   * StEntry:primary-icon:
-   *
-   * The #ClutterActor acting as the primary icon at the start of the #StEntry.
-   */
   props[PROP_PRIMARY_ICON] =
     g_param_spec_object ("primary-icon",
                          "Primary Icon",
@@ -905,11 +912,6 @@ st_entry_class_init (StEntryClass *klass)
                          CLUTTER_TYPE_ACTOR,
                          ST_PARAM_READWRITE);
 
-  /**
-   * StEntry:secondary-icon:
-   *
-   * The #ClutterActor acting as the secondary icon at the end of the #StEntry.
-   */
   props[PROP_SECONDARY_ICON] =
     g_param_spec_object ("secondary-icon",
                          "Secondary Icon",
@@ -917,12 +919,6 @@ st_entry_class_init (StEntryClass *klass)
                          CLUTTER_TYPE_ACTOR,
                          ST_PARAM_READWRITE);
 
-  /**
-   * StEntry:hint-text:
-   *
-   * The text to display when the entry is empty and unfocused. Setting this
-   * will replace the actor of #StEntry::hint-actor.
-   */
   props[PROP_HINT_TEXT] =
     g_param_spec_string ("hint-text",
                          "Hint Text",
@@ -931,12 +927,6 @@ st_entry_class_init (StEntryClass *klass)
                          NULL,
                          ST_PARAM_READWRITE);
 
-  /**
-   * StEntry:hint-actor:
-   *
-   * A #ClutterActor to display when the entry is empty and unfocused. Setting
-   * this will replace the actor displaying #StEntry:hint-text.
-   */
   props[PROP_HINT_ACTOR] =
     g_param_spec_object ("hint-actor",
                          "Hint Actor",
@@ -945,11 +935,6 @@ st_entry_class_init (StEntryClass *klass)
                          CLUTTER_TYPE_ACTOR,
                          ST_PARAM_READWRITE);
 
-  /**
-   * StEntry:text:
-   *
-   * The current text value of the #StEntry.
-   */
   props[PROP_TEXT] =
     g_param_spec_string ("text",
                          "Text",
@@ -957,12 +942,6 @@ st_entry_class_init (StEntryClass *klass)
                          NULL,
                          ST_PARAM_READWRITE);
 
-  /**
-   * StEntry:input-purpose:
-   *
-   * The #ClutterInputContentPurpose that helps on-screen keyboards and similar
-   * input methods to decide which keys should be presented to the user.
-   */
   props[PROP_INPUT_PURPOSE] =
     g_param_spec_enum ("input-purpose",
                        "Purpose",
@@ -971,13 +950,6 @@ st_entry_class_init (StEntryClass *klass)
                        CLUTTER_INPUT_CONTENT_PURPOSE_NORMAL,
                        ST_PARAM_READWRITE);
 
-  /**
-   * StEntry:input-hints:
-   *
-   * The #ClutterInputContentHintFlags providing additional hints (beyond
-   * #StEntry:input-purpose) that allow input methods to fine-tune their
-   * behaviour.
-   */
   props[PROP_INPUT_HINTS] =
     g_param_spec_flags ("input-hints",
                         "hints",
@@ -993,7 +965,8 @@ st_entry_class_init (StEntryClass *klass)
    * StEntry::primary-icon-clicked:
    * @self: the #StEntry
    *
-   * Emitted when the primary icon is clicked.
+   *
+   * Emitted when the primary icon is clicked
    */
   entry_signals[PRIMARY_ICON_CLICKED] =
     g_signal_new ("primary-icon-clicked",
@@ -1002,12 +975,11 @@ st_entry_class_init (StEntryClass *klass)
                   G_STRUCT_OFFSET (StEntryClass, primary_icon_clicked),
                   NULL, NULL, NULL,
                   G_TYPE_NONE, 0);
-
   /**
    * StEntry::secondary-icon-clicked:
    * @self: the #StEntry
    *
-   * Emitted when the secondary icon is clicked.
+   * Emitted when the secondary icon is clicked
    */
   entry_signals[SECONDARY_ICON_CLICKED] =
     g_signal_new ("secondary-icon-clicked",
@@ -1069,9 +1041,9 @@ st_entry_init (StEntry *entry)
 
 /**
  * st_entry_new:
- * @text: (nullable): text to set the entry to
+ * @text: text to set the entry to
  *
- * Create a new #StEntry with the specified text.
+ * Create a new #StEntry with the specified entry
  *
  * Returns: a new #StEntry
  */
@@ -1092,10 +1064,9 @@ st_entry_new (const gchar *text)
  * st_entry_get_text:
  * @entry: a #StEntry
  *
- * Get the text displayed on the entry. If @entry is empty, an empty string will
- * be returned instead of %NULL.
+ * Get the text displayed on the entry
  *
- * Returns: (transfer none): the text for the entry
+ * Returns: the text for the entry. This must not be freed by the application
  */
 const gchar *
 st_entry_get_text (StEntry *entry)
@@ -1114,8 +1085,7 @@ st_entry_get_text (StEntry *entry)
  * @entry: a #StEntry
  * @text: (nullable): text to set the entry to
  *
- * Sets the text displayed on the entry. If @text is %NULL, the #ClutterText
- * will instead be set to an empty string.
+ * Sets the text displayed on the entry
  */
 void
 st_entry_set_text (StEntry     *entry,
@@ -1137,9 +1107,10 @@ st_entry_set_text (StEntry     *entry,
  * st_entry_get_clutter_text:
  * @entry: a #StEntry
  *
- * Retrieve the internal #ClutterText so that extra parameters can be set.
+ * Retrieve the internal #ClutterText so that extra parameters can be set
  *
- * Returns: (transfer none): the #ClutterText used by @entry
+ * Returns: (transfer none): the #ClutterText used by #StEntry. The entry is
+ * owned by the #StEntry and should not be unref'ed by the application.
  */
 ClutterActor*
 st_entry_get_clutter_text (StEntry *entry)
@@ -1155,8 +1126,8 @@ st_entry_get_clutter_text (StEntry *entry)
  * @text: (nullable): text to set as the entry hint
  *
  * Sets the text to display when the entry is empty and unfocused. When the
- * entry is displaying the hint, it has a pseudo class of `indeterminate`.
- * A value of %NULL unsets the hint.
+ * entry is displaying the hint, it has a pseudo class of "indeterminate".
+ * A value of NULL unsets the hint.
  */
 void
 st_entry_set_hint_text (StEntry     *entry,
@@ -1176,13 +1147,10 @@ st_entry_set_hint_text (StEntry     *entry,
  * st_entry_get_hint_text:
  * @entry: a #StEntry
  *
- * Gets the text that is displayed when the entry is empty and unfocused or
- * %NULL if the #StEntry:hint-actor was set to an actor that is not a #StLabel.
+ * Gets the text that is displayed when the entry is empty and unfocused
  *
- * Unlike st_entry_get_text() this function may return %NULL if
- * #StEntry:hint-actor is not a #StLabel.
- *
- * Returns: (nullable) (transfer none): the current value of the hint property
+ * Returns: the current value of the hint property. This string is owned by the
+ * #StEntry and should not be freed or modified.
  */
 const gchar *
 st_entry_get_hint_text (StEntry *entry)
@@ -1233,8 +1201,6 @@ st_entry_set_input_purpose (StEntry                    *entry,
  * @entry: a #StEntry
  *
  * Gets the value of the #StEntry:input-purpose property.
- *
- * Returns: the input purpose of the entry
  */
 ClutterInputContentPurpose
 st_entry_get_input_purpose (StEntry *entry)
@@ -1280,8 +1246,6 @@ st_entry_set_input_hints (StEntry                      *entry,
  * @entry: a #StEntry
  *
  * Gets the value of the #StEntry:input-hints property.
- *
- * Returns: the input hints for the entry
  */
 ClutterInputContentHintFlags
 st_entry_get_input_hints (StEntry *entry)
@@ -1300,9 +1264,6 @@ _st_entry_icon_clicked_cb (ClutterClickAction *action,
                            StEntry            *entry)
 {
   StEntryPrivate *priv = ST_ENTRY_PRIV (entry);
-
-  if (!clutter_actor_get_reactive (CLUTTER_ACTOR (entry)))
-    return;
 
   if (actor == priv->primary_icon)
     g_signal_emit (entry, entry_signals[PRIMARY_ICON_CLICKED], 0);
@@ -1345,7 +1306,7 @@ _st_entry_set_icon (StEntry       *entry,
  * @entry: a #StEntry
  * @icon: (nullable): a #ClutterActor
  *
- * Set the primary icon of the entry to @icon.
+ * Set the primary icon of the entry to @icon
  */
 void
 st_entry_set_primary_icon (StEntry      *entry,
@@ -1364,9 +1325,7 @@ st_entry_set_primary_icon (StEntry      *entry,
  * st_entry_get_primary_icon:
  * @entry: a #StEntry
  *
- * Get the value of the #StEntry:primary-icon property.
- *
- * Returns: (nullable) (transfer none): a #ClutterActor
+ * Returns: (transfer none): a #ClutterActor
  */
 ClutterActor *
 st_entry_get_primary_icon (StEntry *entry)
@@ -1384,7 +1343,7 @@ st_entry_get_primary_icon (StEntry *entry)
  * @entry: a #StEntry
  * @icon: (nullable): an #ClutterActor
  *
- * Set the secondary icon of the entry to @icon.
+ * Set the secondary icon of the entry to @icon
  */
 void
 st_entry_set_secondary_icon (StEntry      *entry,
@@ -1403,9 +1362,7 @@ st_entry_set_secondary_icon (StEntry      *entry,
  * st_entry_get_secondary_icon:
  * @entry: a #StEntry
  *
- * Get the value of the #StEntry:secondary-icon property.
- *
- * Returns: (nullable) (transfer none): a #ClutterActor
+ * Returns: (transfer none): a #ClutterActor
  */
 ClutterActor *
 st_entry_get_secondary_icon (StEntry *entry)
@@ -1421,9 +1378,9 @@ st_entry_get_secondary_icon (StEntry *entry)
 /**
  * st_entry_set_hint_actor:
  * @entry: a #StEntry
- * @hint_actor: (nullable): a #ClutterActor
+ * @hint_actor: (allow-none): a #ClutterActor
  *
- * Set the hint actor of the entry to @hint_actor.
+ * Set the hint actor of the entry to @hint_actor
  */
 void
 st_entry_set_hint_actor (StEntry      *entry,
@@ -1456,9 +1413,7 @@ st_entry_set_hint_actor (StEntry      *entry,
  * st_entry_get_hint_actor:
  * @entry: a #StEntry
  *
- * Get the value of the #StEntry:hint-actor property.
- *
- * Returns: (nullable) (transfer none): a #ClutterActor
+ * Returns: (transfer none): a #ClutterActor
  */
 ClutterActor *
 st_entry_get_hint_actor (StEntry *entry)

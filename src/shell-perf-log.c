@@ -259,7 +259,7 @@ define_event (ShellPerfLog *perf_log,
       return NULL;
     }
 
-  event = g_new (ShellPerfEvent, 1);
+  event = g_slice_new (ShellPerfEvent);
 
   event->id = perf_log->events->len;
   event->name = g_strdup (name);
@@ -501,7 +501,7 @@ shell_perf_log_define_statistic (ShellPerfLog *perf_log,
   if (event == NULL)
     return;
 
-  statistic = g_new (ShellPerfStatistic, 1);
+  statistic = g_slice_new (ShellPerfStatistic);
   statistic->event = event;
 
   statistic->initialized = FALSE;
@@ -598,7 +598,7 @@ shell_perf_log_add_statistics_callback (ShellPerfLog               *perf_log,
                                         gpointer                    user_data,
                                         GDestroyNotify              notify)
 {
-  ShellPerfStatisticsClosure *closure = g_new (ShellPerfStatisticsClosure, 1);
+  ShellPerfStatisticsClosure *closure = g_slice_new (ShellPerfStatisticsClosure);
 
   closure->callback = callback;
   closure->user_data = user_data;
@@ -805,7 +805,7 @@ write_string (GOutputStream *out,
  * with each element being a dictionary of the form:
  *
  * { name: <name of event>,
- *   description: <description of string,
+ *   description: <descrition of string,
  *   statistic: true } (only for statistics)
  *
  * Return value: %TRUE if the dump succeeded. %FALSE if an IO error occurred
@@ -862,7 +862,7 @@ replay_to_json (gint64      time,
                 gpointer    user_data)
 {
   ReplayToJsonClosure *closure = user_data;
-  g_autofree char *event_str = NULL;
+  char *event_str;
 
   if (closure->error != NULL)
     return;

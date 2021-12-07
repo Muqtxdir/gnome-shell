@@ -1,878 +1,56 @@
-gnome-shell (40.5-1ubuntu2) impish; urgency=medium
-
-  [ Daniel van Vugt ]
-  * debian/patches: Avoid full meta context finalization.
-    To workaround (prevent) shutdown crashes (LP: #1936826, #1942031, #1942121,
-    LP: #1943406, #1944054, #1945010, #1945116, #1944388)
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Tue, 05 Oct 2021 04:52:11 +0200
-
-gnome-shell (40.5-1ubuntu1) impish; urgency=medium
-
-  * Merge with debian
-  * debian/patches: Refresh and update to current upstream
-  * debian/patches: Move ubuntu-only patches into the ubuntu namespace
-  * Remaining changes with debian:
-    - Replace gnome-backgrounds dep with ubuntu-wallpapers and Suggests
-      gnome-themes-standard-data, gnome-backgrounds
-    - Add some Recommends:
-      + ubuntu-session (| gnome-session) to have the ubuntu session available
-      + xserver-xorg-legacy
-      + yaru-theme-gnome-shell for the default ubuntu theming
-    - Update debian/gbp.conf with Ubuntu settings
-    - gnome-shell-common.prerm: Remove deprecated ubuntu theme alternative
-    - ubuntu/desktop_detect.patch:
-      + add caching for desktop detection to avoid querying the current
-        desktop env variable as iterate through the list each time. For the
-        time of the Shell process, we can expect this env variable to stay
-        stable.
-    - ubuntu/smarter_alt_tab.patch:
-      + quick alt-tab (without showing up the switcher) switch only between
-        the last window of the last 2 applications to be focused instead of
-        raising all windows of those apps.
-    - ubuntu/lightdm-user-switching.patch:
-      + Allow user switching when using LightDM.
-    - ubuntu/lock_on_suspend.patch
-      + Respect Ubuntu's lock-on-suspend setting.
-    - ubuntu/background_login.patch
-      + Change default background color as we modified the default GDM color
-        for our ubuntu session.
-    - ubuntu/gdm_alternatives.patch
-      + Add support for GDM3 theme alternatives
-    - optional-hot-corner.patch
-      + enable patch proposed by upstream developer already in package (but
-        not in series) to add a settings for optional hot corner activation.
-    - main-show-an-error-message-on-gnome-shell-crash.patch,
-      global-make-possible-to-set-debug-flags-dynamically.patch,
-      main-increase-the-granularity-of-backtraces-in-SHELL_DEBU.patch,
-      main-add-backtrace-crashes-all-and-backtrace-all.patch,
-      sessionMode-add-support-for-debugFlags-parameter.patch:
-      + Improve debug JS tracing for crash reports
-    - st-scroll-view-Handle-the-case-where-scrollbars-are-NULL.patch:
-      + Fix crash on theme changes
-    - ubuntu/search-call-XUbuntuCancel-method-on-providers-when-no-dat.patch:
-      + stop searches when requested from UI
-    - magnifier-Show-cursor-when-magnifier-is-enabled-and-scale.patch:
-      + Show monitor scaled cursor when magnifier is enabled
-    - ubuntu/layout-Make-starting-in-the-overview-optional.patch:
-      + Makes dock replace overview easier
-    - ubuntu/layout-Try-to-allocate-before-getting-size-of-tracke.patch:
-      + Ensure windows don't get maximized under the panels / dock
-    - Break gnome-shell-extension-desktop-icons (<< 19.01.3+git20190814)
-
-  [ Jeremy Bicha ]
-  * Revert "Skip ppc64el tests to fix FTBFS"
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Sat, 25 Sep 2021 13:07:30 +0200
-
-gnome-shell (40.5-1) unstable; urgency=medium
-
-  * New upstream release:
-    - Optimize rendering of fullscreen zoom
-    - Fix glitchy launch animations when leaving overview
-    - Fix wrong separator position in dash
-    - Fix OSK not registering button presses on X11
-    - Fix work area getting messed up by hidden panels
-    - Fix IM candidate popover position
-
-  [ Simon McVittie ]
-  * Revert "Avoid libgweather 40 dependency"
-    libgweather 40 has now been uploaded to unstable.
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Fri, 24 Sep 2021 22:07:26 +0200
-
-gnome-shell (40.4-3) unstable; urgency=medium
-
-  * Team upload
-
-  [ Simon McVittie ]
-  * gnome-shell-extension-prefs: Add patch to give Debian-specific advice.
-    We package gnome-extensions-app in the same binary package as
-    gnome-shell-extension-prefs, so there's never a need to install it
-    separately, either via Debian packages or from Flathub.
-  * gnome-shell-extension-prefs: Add Provides on gnome-extensions-app.
-    The gnome-shell-extension-prefs program in this package is deprecated,
-    and the gnome-extensions-app program is now the main reason to want to
-    install it, so let's make it a bit more discoverable.
-  * gnome-shell: Add Suggests on gnome-shell-extension-prefs.
-    The g-s-e-p program itself is deprecated, but the g-s-e-p package also
-    contains gnome-extensions-app, which is the recommended UI for
-    extensions management.
-
-  [ Jeremy Bicha ]
-  * debian/watch: Watch for stable releases
-
-  [ Marco Trevisan (Treviño) ]
-  * debian/control: Add missing dependency on gir1.2-gtk-4.0
-
-  [ Gunnar Hjalmarsson ]
-  * Add libgtk-3-bin to Build-Depends for dh_translations (LP: #1941954)
-
- -- Simon McVittie <smcv@debian.org>  Sun, 12 Sep 2021 16:44:18 +0100
-
-gnome-shell (40.4-2) unstable; urgency=medium
-
-  * Team upload
-  * Release to unstable (transition: #992870)
-  * Depend on gnome-settings-daemon 40.
-    Older versions don't autostart the screensaver service, causing screen
-    locking to fail.
-    Thanks to jordi
-  * Depend on gsettings-desktop-schemas 40.
-    This is implicit in our dependency on a newer gnome-settings-daemon,
-    but let's make it explicit that all the core GNOME packages need to
-    go together.
-
- -- Simon McVittie <smcv@debian.org>  Sat, 11 Sep 2021 21:54:49 +0100
-
-gnome-shell (40.4-1) experimental; urgency=medium
-
-  * Team upload
-  * New upstream release
-    - Don't include hidden search results in keyboard navigation
-    - Fix visual issues with extensions that occupy screen edges
-    - Add focus indications for switch widgets, such as VPN toggles
-    - Fix visual glitch when dragging window preview in overview
-    - Avoid windows that should not be in the overview appearing on
-      Shell startup, for example with desktop-icons-ng
-    - Fix suspend inhibitor accounting
-    - Avoid a crash when running in "headless" mode
-    - Be compatible with more combinations of new GLib and old gjs
-      (not applicable in Debian, we already have the new gjs)
-    - Fix spurious warnings for virtual input devices
-    - Minor optimization for screen magnifier
-    - Avoid a warning when displaying app details
-    - Use the same location permissions as gnome-control-center
-    - Fix some small memory leaks
-    - Fix glitch in transition from app grid to session
-    - Fix input method popup visibility when in fullscreen
-    - magnifier: Fix view jumps when using caret tracking
-    - Fix shadow rendering glitches
-    - Fix vertical scrollbars in RTL locales
-    - Fix a crash if an app moves between monitors during startup
-    - Remove timeout for starting Xwayland on-demand
-    - Fix D-Bus-initiated app focus changes
-    - Make sure to return a value from D-Bus methods so callers won't
-      time out
-    - Make sure power menu stays in sync with upower
-    - Handle non-widget source actors
-    - Optimize shadows in overview
-    - Use mallinfo2() instead of deprecated mallinfo() if glibc is new
-      enough (not applicable in Debian yet)
-    - Fix runtime warnings related to magnifier and shutdown
-    - Translation updates
-  * d/p/weather-Cope-with-either-libgweather-40-or-3.36.patch:
-    Avoid libgweather 40 dependency.
-    It'll be easier to do the libmutter-8-0 transition if we can decouple
-    it from libgweather, and gnome-shell is written in a dynamic language,
-    so we can easily avoid the dependency.
-  * Relax Breaks on top-icons-plus extension.
-    There doesn't seem to have been an official upstream release for v28,
-    so the version fixing GNOME 40 compatibility will be 27-3.
-    It has a versioned Depends anyway, so we don't need to be completely
-    precise here.
-
- -- Simon McVittie <smcv@debian.org>  Tue, 31 Aug 2021 10:03:33 +0100
-
-gnome-shell (40.2-1ubuntu6) impish; urgency=medium
-
-  * d/rules:
-    - Drop dh_translations workaround. gettext used by LP has been
-      updated (LP: #1756547).
-    - Fix Lintian warning about DEB_HOST_ARCH assignment
-
- -- Gunnar Hjalmarsson <gunnarhj@ubuntu.com>  Wed, 01 Sep 2021 15:44:38 +0200
-
-gnome-shell (40.2-1ubuntu5) impish; urgency=medium
-
-  * Fix translation issues (LP: #1941954):
-    - Really fix translation import problem as reported in LP: #1756547
-    - Add libgtk-3-bin to Build-Depends for dh_translations
-
- -- Gunnar Hjalmarsson <gunnarhj@ubuntu.com>  Sat, 28 Aug 2021 20:13:36 +0200
-
-gnome-shell (40.2-1ubuntu4) impish; urgency=medium
-
-  * debian/rules:
-    - Skip tests when building for ppc64el to fix FTBFS (LP: #1941792)
-
- -- Gunnar Hjalmarsson <gunnarhj@ubuntu.com>  Fri, 27 Aug 2021 16:20:11 +0200
-
-gnome-shell (40.2-1ubuntu3) impish; urgency=medium
-
-  [ Daniel van Vugt ]
-  * Add layout-Make-starting-in-the-overview-optional.patch:
-    - So that extensions like Ubuntu Dock have the option of preventing
-      the shell starting in the overview. (LP: #1940925)
-
- -- Gunnar Hjalmarsson <gunnarhj@ubuntu.com>  Thu, 26 Aug 2021 19:47:55 +0200
-
-gnome-shell (40.2-1ubuntu2) impish; urgency=medium
-
-  [ Daniel van Vugt ]
-  * Add workspace-Remove-skip-taskbar-windows-while-the-over.patch to stop the
-    desktop icons window appearing like an app window in the overview on
-    startup (LP: #1936643)
-
- -- Iain Lane <iain.lane@canonical.com>  Thu, 12 Aug 2021 09:41:01 +0100
-
-gnome-shell (40.2-1ubuntu1) impish; urgency=medium
-
-  * Merge with debian
-  * debian/control:
-    - Bump Breaks on yaru-theme-gnome-shell 21.10.1
-    - Stop suggesting removed package gnome-themes-standard-data
-    - Recommends newer version of yaru theme
-  * debian/gnome-shell-common.pre{rm,inst}:
-    - Remove deprecated update-alternatives actions
-  * debian/gnome-shell-common.alternatives:
-    - Use dh_installalternatives
-    - Rename gdm3-theme to gdm-theme
-  * debian/source_gnome-shell.py: Support gdm name only
-  * debian/control: Add missing dependency on gir1.2-gtk-4.0
-  * d/p/ubuntu/gdm_alternatives.patch: Use gdm basename for custom stylesheets
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Wed, 07 Jul 2021 09:30:42 +0200
-
-gnome-shell (40.2-1) experimental; urgency=medium
-
-  * New upstream release:
-    - Unbreak Xwayland apps when not using systemd in user session
-    - Fix distributed man pages
-    - Avoid unnecessary icon shadow changes
-    - Immediately start app grid drags for non-touch devices
-    - Handle screencast failures more gracefully
-  * debian/patches: Dropped, all applied upstream
-  * debian/control: Add break on unreleased version of
-    gnome-shell-extension-desktop-icons
-  * debian/control: Break on gnome-shell-extension-desktop-icons-ng << 0.16
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Wed, 16 Jun 2021 00:47:49 +0200
-
-gnome-shell (40.1-1) experimental; urgency=medium
-
-  * New upstream release
-  * debian/patches: Remove (all applied upstream)
-  * debian/control:
-    - Bump dependency to mutter-8
-    - Update extensions breaks.
-      This version will break various extensions so update broken versions
-    - Build depend on gtk4.
-      It's needed by shew subproject
-    - Add runtime dependency on gtk4 to the extensions prefs
-    - Add missing runtime dependencies and suggestions.
-      All dependencies can be found with a script such as:
-      grep "imports\.gi" --include "*.js" -rh js \
-       | grep -o "\b[A-Z][A-Za-z]\+\(,\|\s\|\b\)" | sed "s/,\?\s*$//g" | sort -u
-  * debian/patches:
-    - Rebuild manual files to use the manpage format
-    - Cherry-pick upstream patch fixing non-systemd case
-    - Cherry-pick upstream crash fix
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Sun, 30 May 2021 17:55:32 +0200
-
-gnome-shell (3.38.6-1) unstable; urgency=medium
-
-  * Team upload
-  * New upstream release
-    - gdm user interface fixes
-      + Don't limit timed-login progress bar to the width of the username
-        if it's short
-      + Make sure authentication cancellation is handled correctly
-      + Improve fingerprint authentication handling
-      + Don't retry authentication if services are unavailable
-    - Fix word suggestions in on-screen keyboard
-    - Fix freeze after closing some modal dialogs with gjs 1.68.x
-      (LP: #1918666)
-    - Fix double-free crash in calendar on non-x86 (LP: #1915929)
-    - Improve OSK compatibility with gjs 1.68.x (LP: #1918738)
-    - Fix input-method popup visibility over fullscreen applications
-    - Fix a crash if an app moves between monitors during startup
-    - Fix D-Bus-initiated app focus changes
-    - Make sure to return a value from D-Bus methods so callers won't
-      time out
-    - Fix runtime warnings related to magnifier and shutdown
-    - Make sure power menu stays in sync with upower
-    - Use mallinfo2() instead of deprecated mallinfo() if glibc is new
-      enough (not applicable in Debian yet)
-  * d/gbp.conf, d/control.in: Update VCS details for debian/unstable branch
-
- -- Simon McVittie <smcv@debian.org>  Thu, 26 Aug 2021 08:50:50 +0100
-
-gnome-shell (3.38.4-2) experimental; urgency=medium
-
-  * debian/patches: Import upstream patches needed to support libgweather 40.
-    libgweather 40 had an internal API change that caused runtime issues, so
-    we need to update the shell code in order to make the shell to work and
-    show the weather information.
-  * debian/control: Bump runtime dependency on gweather 40
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Wed, 26 May 2021 13:37:14 +0200
-
-gnome-shell (3.38.4-1ubuntu3) impish; urgency=medium
-
-  [ Daniel van Vugt ]
-  * Add workspacesView-Only-use-valid-allocations-when-avail.patch.
-    To stop bogus values being used in _updateWorkspacesActualGeometry(),
-    which would cause the overview to fail to toggle. (LP: #1922353)
-
-  [ Marco Trevisan (Treviño) ]
-  * debian/patches: Refresh
-  * debian/patches: Cherry-pick upstream calendar-server crash fix
-    (LP: #1915929)
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Mon, 31 May 2021 18:51:34 +0200
-
-gnome-shell (3.38.4-1ubuntu2) hirsute; urgency=medium
-
-  [ Daniel van Vugt ]
-  * Add layout-Try-to-allocate-before-getting-size-of-tracke.patch.
-    To fix LP: #1919979 and also to re-fix LP: #1917939
-    (LP: #1919979, #1917939)
-  * Drop layout-Allow-updating-struts-in-Overview.patch.
-    Because it caused a regression and doesn't seem to have been necessary
-    anyway. (LP: #1922772)
-
-  [ Marco Trevisan (Treviño) ]
-  * debian/patches: Fix suggestions box actor population in non-latin languages
-    (LP: #1914230)
-  * debian/patches: Enable to use Escape to cancel auth requests (with limits)
-    (LP: #1921929)
-  * debian/patches: Refresh
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Thu, 15 Apr 2021 06:20:27 +0200
-
-gnome-shell (3.38.4-1ubuntu1) hirsute; urgency=medium
-
-  * Merge with debian, containing a new upstream release
-  * debian/control: (Build-)Depends on mutter 3.38.4
-  * debian/patches:
-    - Refresh
-    - Remove input-thread related patches
-    - Fix handling of OSK codes in keyboard (LP: #1918738)
-    - Ensure Cancel button uses proper arguments (LP: #1918666)
-    - Allow updating struts in Overview (LP: #1917939)
-    - Configure Login Scree: cleanup code to match shell's JS
-  * Remaining changes with debian:
-    - Replace gnome-backgrounds dep with ubuntu-wallpapers and Suggests
-      gnome-themes-standard-data, gnome-backgrounds
-    - Add some Recommends:
-      + ubuntu-session (| gnome-session) to have the ubuntu session available
-      + xserver-xorg-legacy
-      + yaru-theme-gnome-shell for the default ubuntu theming
-    - Update debian/gbp.conf with Ubuntu settings
-    - gnome-shell-common.prerm: Remove deprecated ubuntu theme alternative
-    - ubuntu/desktop_detect.patch:
-      + add caching for desktop detection to avoid querying the current
-        desktop env variable as iterate through the list each time. For the
-        time of the Shell process, we can expect this env variable to stay
-        stable.
-    - ubuntu/smarter_alt_tab.patch:
-      + quick alt-tab (without showing up the switcher) switch only between
-        the last window of the last 2 applications to be focused instead of
-        raising all windows of those apps.
-    - ubuntu/lightdm-user-switching.patch:
-      + Allow user switching when using LightDM.
-    - ubuntu/lock_on_suspend.patch
-      + Respect Ubuntu's lock-on-suspend setting.
-    - ubuntu/background_login.patch
-      + Change default background color as we modified the default GDM color
-        for our ubuntu session.
-    - ubuntu/gdm_alternatives.patch
-      + Add support for GDM3 theme alternatives
-    - optional-hot-corner.patch
-      + enable patch proposed by upstream developer already in package (but
-        not in series) to add a settings for optional hot corner activation.
-    - main-show-an-error-message-on-gnome-shell-crash.patch,
-      global-make-possible-to-set-debug-flags-dynamically.patch,
-      main-increase-the-granularity-of-backtraces-in-SHELL_DEBU.patch,
-      main-add-backtrace-crashes-all-and-backtrace-all.patch,
-      sessionMode-add-support-for-debugFlags-parameter.patch:
-      + Improve debug JS tracing for crash reports
-    - st-scroll-view-Handle-the-case-where-scrollbars-are-NULL.patch:
-      + Fix crash on theme changes
-    - ubuntu/search-call-XUbuntuCancel-method-on-providers-when-no-dat.patch:
-      + stop searches when requested from UI
-    - magnifier-Show-cursor-when-magnifier-is-enabled-and-scale.patch:
-      + Show monitor scaled cursor when magnifier is enabled
-    - Break gnome-shell-extension-desktop-icons (<< 19.01.3+git20190814)
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Fri, 26 Mar 2021 07:25:17 +0100
-
-gnome-shell (3.38.4-1) unstable; urgency=medium
-
-  * Team upload
-  * New upstream release
-    - Fix missing X11 fallback icons (particularly for games and other
-      programs not installed system-wide), a regression in 3.37.3
-    - Fix a Shell crash when an X11 window with an invalid/empty icon
-      is closed, possibly a regression in 3.38.3-3
-    - Fix a memory leak when getting the icon from the texture cache
-    - Fix a possible use-after-free when removing a window
-    - Don't reposition unrelated windows when dragging a window onto the
-      workspace switcher
-    - Make sure the blur effect shader can be compiled successfully
-    - Many other fixes that we already had via debian/patches
-  * Drop all patches, applied upstream
-
- -- Simon McVittie <smcv@debian.org>  Wed, 17 Mar 2021 09:52:47 +0000
-
-gnome-shell (3.38.3-4) unstable; urgency=medium
-
-  * Team upload
-  * Update to upstream commit 3.38.3-11-ga87aae8f4 from gnome-3-38 branch
-    - Fix a crash if libsoup version 3 is installed
-    - Update German translation
-
- -- Simon McVittie <smcv@debian.org>  Tue, 09 Mar 2021 20:35:00 +0000
-
-gnome-shell (3.38.3-3ubuntu2) hirsute; urgency=medium
+gnome-shell (3.36.9-0ubuntu0.20.04.2) focal; urgency=medium
 
   [ Didier Roche ]
   [ Jean-Baptiste Lallement ]
   * debian/patches/ubuntu/configure_login_screen.patch:
-    Make GDM background configurable with gsettings (LP: #1918613)
+    Make GDM background configurable with gsettings (LP: #1929536)
 
- -- Didier Roche <didrocks@ubuntu.com>  Thu, 25 Mar 2021 10:44:17 +0100
+ -- Didier Roche <didrocks@ubuntu.com>  Wed, 19 May 2021 15:49:17 +0200
 
-gnome-shell (3.38.3-3ubuntu1) hirsute; urgency=medium
+gnome-shell (3.36.9-0ubuntu0.20.04.1) focal; urgency=medium
 
-  * debian/patches: Switch to the new API to get actor from inputdevice
-    (LP: #1690719)
-  * debian/control: Bump dependency on mutter with input thread support
-  * debian/patches: Update to MetaCursorTracker API change
-  * debian/patches: Do not forward device IDs
-  * debian/ubuntu-session-mods/ubuntu.json: Use desktop-icons-ng extension by
-    default (LP: #1916511)
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Fri, 26 Feb 2021 00:51:19 +0100
-
-gnome-shell (3.38.3-3) unstable; urgency=medium
-
-  * Team upload
-  * d/patches: Update to 3.38.3-9-gbdf31febe from gnome-3-38 branch
-    - Use image-data in preference to app icon for notifications
-    - Don't let fullscreen apps block the workspace-changing animation
-    - Don't leave a non-interactable polkit prompt if authentication
-      succeeds without requiring user interaction (LP: #1824874)
-    - Fix a crash in the blur effect when taking a screenshot or
-      screencast
-    - Fix a crash involving apps' fallback icons
-
- -- Simon McVittie <smcv@debian.org>  Tue, 23 Feb 2021 09:28:02 +0000
-
-gnome-shell (3.38.3-2ubuntu2) hirsute; urgency=medium
-
-  * d/p/gdm-Don-t-try-to-retry-authenticating-when-the-service-is.patch:
+  * New upstream release (LP: #1921963):
+    - Improve login screen accessibility
+    - Prefer image-data hint over app-icon in notifications
+    - Plugged leak
+    - Fixed crashes
+  * debian/patches:
+    - Correctly handle login cancellation and failures (LP: #1915066)
+    - Show errors on fingerprint failures and limit retries (LP: #1865838)
     - gdm: Don't try to retry authenticating when the service is unavailable
       (LP: #1915570)
+    - Enable to use Escape to cancel auth requests (with limits) (LP: #1921929)
 
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Tue, 16 Feb 2021 05:16:49 +0100
+ -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Wed, 31 Mar 2021 00:50:16 +0200
 
-gnome-shell (3.38.3-2ubuntu1) hirsute; urgency=medium
+gnome-shell (3.36.7-0ubuntu0.20.04.1) focal; urgency=medium
 
-  * Merge with debian, containing new upstream release (LP: #1915089)
-  * debian/patches: Correctly handle login cancellation and failures.
-    Ensure the GDM workers are terminated before restarting a new auth
-    request, allowing fingerprint authentication to be restarted.
-    (LP: #1915066)
-  * debian/patches: Show errors on fingerprint failures and limit retries.
-    (LP: #1865838)
-  * debian/control: BD on gstreamer and pipewire, depend on gstreamer1.0-pipewire.
-    Enable building with pipewire now that is in main and add runtime
-    dependency on gstreamer-pipewire to gnome-shell (LP: #1901391).
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Tue, 09 Feb 2021 05:16:10 +0100
-
-gnome-shell (3.38.3-2) unstable; urgency=medium
-
-  * Team upload
-  * d/patches: Update to 3.38.3-3-ge3dc4401d from gnome-3-38 branch
-    - Fix opening Extensions app from notification
-    - Fix workspace layout in right-to-left locales
-    - Don't break window focusing if trying to take an area screenshot while
-      an application such as a game has an X11 grab (LP: #1910235)
-
- -- Simon McVittie <smcv@debian.org>  Thu, 04 Feb 2021 10:27:05 +0000
-
-gnome-shell (3.38.3-1) unstable; urgency=medium
-
-  * Team upload
-  * d/watch: Only watch for 3.38.x versions
-  * New upstream release
-
- -- Simon McVittie <smcv@debian.org>  Thu, 14 Jan 2021 20:13:26 +0000
-
-gnome-shell (3.38.2-1ubuntu1) hirsute; urgency=medium
-
-  * Merge with debian, containing new upstream release (LP: #1908161):
-    - Fixed crash in meta_window_actor_thaw (LP: #1897765)
-    - Fixed crash in st_bin_destroy (LP: #1898005)
+  [ Marco Trevisan (Treviño) ]
+  * New upstream release (LP: #1903764)
+    - Fix potential stack overflow in libcroco
+    - Fix system action search regressions
+    - Fix week number alignment when using font-scaling
+    - Misc. bug fixes and cleanups
   * debian/patches:
-    - Refreshed
-    - Revert-appDisplay-baseAppView-Cleanup-animate.patch:
-      + Revert a 3.38.2 change that proved to cause regressions
-    - screenshot-Grab-screenshot-during-paint-on-X11.patch:
-      + Correctly take screenshots for fullscreen games (LP: #1908164)
-  * Remaining changes with debian:
-    - Replace gnome-backgrounds dep with ubuntu-wallpapers and Suggests
-      gnome-themes-standard-data, gnome-backgrounds
-    - Add some Recommends:
-      + ubuntu-session (| gnome-session) to have the ubuntu session available
-      + xserver-xorg-legacy
-      + yaru-theme-gnome-shell for the default ubuntu theming
-    - Update debian/gbp.conf with Ubuntu settings
-    - gnome-shell-common.prerm: Remove deprecated ubuntu theme alternative
-    - ubuntu/desktop_detect.patch:
-      + add caching for desktop detection to avoid querying the current
-        desktop env variable as iterate through the list each time. For the
-        time of the Shell process, we can expect this env variable to stay
-        stable.
-    - ubuntu/smarter_alt_tab.patch:
-      + quick alt-tab (without showing up the switcher) switch only between
-        the last window of the last 2 applications to be focused instead of
-        raising all windows of those apps.
-    - ubuntu/lightdm-user-switching.patch:
-      + Allow user switching when using LightDM.
-    - ubuntu/lock_on_suspend.patch
-      + Respect Ubuntu's lock-on-suspend setting.
-    - ubuntu/background_login.patch
-      + Change default background color as we modified the default GDM color
-        for our ubuntu session.
-    - ubuntu/gdm_alternatives.patch
-      + Add support for GDM3 theme alternatives
-    - optional-hot-corner.patch
-      + enable patch proposed by upstream developer already in package (but
-        not in series) to add a settings for optional hot corner activation.
-    - main-show-an-error-message-on-gnome-shell-crash.patch,
-      global-make-possible-to-set-debug-flags-dynamically.patch,
-      main-increase-the-granularity-of-backtraces-in-SHELL_DEBU.patch,
-      main-add-backtrace-crashes-all-and-backtrace-all.patch,
-      sessionMode-add-support-for-debugFlags-parameter.patch:
-      + Improve debug JS tracing for crash reports
-    - st-scroll-view-Handle-the-case-where-scrollbars-are-NULL.patch:
-      + Fix crash on theme changes
-    - ubuntu/search-call-XUbuntuCancel-method-on-providers-when-no-dat.patch:
-      + stop searches when requested from UI
-    - magnifier-Show-cursor-when-magnifier-is-enabled-and-scale.patch:
-      + Show monitor scaled cursor when magnifier is enabled
-    - Break gnome-shell-extension-desktop-icons (<< 19.01.3+git20190814)
+    - Refresh
+    - Handle screenshot failures gracefully (LP: #1908187)
 
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Tue, 15 Dec 2020 02:42:26 +0100
+  [ Matthew Ruffell ]
+  * authPrompt-Properly-get-oVirt-service-name.patch,
+    authPrompt-set-value-of-beginRequestType-to-DONT_PROVIDE_.patch,
+    gdm-Introduce-vmware-credential-manager-for-pre-authentic.patch,
+    gdm-Refactor-oVirt-to-a-generic-CredentialManager-interfa.patch:
+    - Enable support for VMware Horizon SSO to ensure compatibility
+      with the Horizon Agent (LP: #1886592)
 
-gnome-shell (3.38.2-1) unstable; urgency=medium
+ -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Tue, 15 Dec 2020 05:54:44 +0100
 
-  * Team upload
-  * New upstream release
-    - Improve app picker spacing on larger resolutions
-    - Don't add dialogs to the window preview more than once
-    - Avoid cursor visibility changes on startup
-    - Remove dead code in StButton, StEntry
-    - Make FocusApp D-Bus method more reliable
-    - Fix crashes with the desktop-icons extension
-      (LP: #1898005, LP: #1898910)
-    - Silence some warnings
-    - Update translations: nb, zh_CN
-    - Otherwise functionally equivalent to 3.38.1-3
-  * Drop patches that were included in the new upstream release
-  * d/gbp.conf: Use upstream 3.38.x branch.
-    Version 40~alpha was already released, so it's misleading to say that
-    3.38.x is the latest.
-  * Standards-Version: 4.5.1 (no changes required)
-  * Update Lintian overrides
-  * Release to unstable
+gnome-shell (3.36.6-1ubuntu0.20.04.1) focal; urgency=medium
 
- -- Simon McVittie <smcv@debian.org>  Thu, 03 Dec 2020 10:40:52 +0000
+  * Merge with debian, containing new stable release (LP: #1896334)
+  * debian/patches: Refresh, drop merged CVE-2020-17489.patch
 
-gnome-shell (3.38.1-3) experimental; urgency=medium
-
-  * Team upload
-  * Update to upstream gnome-3-38 branch, commit 3.38.1-19-ge93b8263b
-    - Fix a crash with message "Error in freeze/thaw accounting"
-    - Don't crash if taking a per-window screenshot fails
-    - Align audio device selection icons better
-    - Fix typing replies into Telepathy notifications
-    - Fix some memory leaks
-    - Show screen-recorder indication, even in Xorg
-    - Don't play message sounds when "Do not disturb" is enabled
-    - Don't allow adding apps to favorites if they would be hidden anyway
-    - Update translations: bn_IN, es, fur, pt
-
- -- Simon McVittie <smcv@debian.org>  Thu, 12 Nov 2020 16:45:02 +0000
-
-gnome-shell (3.38.1-2) unstable; urgency=medium
-
-  * debian/patches/modemManager_Add-property-getters.patch:
-    - Cherry picked upstream commit to fix issue with missing "Mobile
-      Broadband" item in the system menu (closes: #971511).
-
-  [ Simon McVittie ]
-  * d/control.in: Depend on gir1.2-gstreamer-1.0 (closes: #973463)
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Wed, 04 Nov 2020 17:26:00 +0100
-
-gnome-shell (3.38.1-1ubuntu2) hirsute; urgency=medium
-
-  * debian/patches/modemManager_Add-property-getters.patch:
-    - Cherry picked upstream commit to fix issue with missing "Mobile
-      Broadband" item in the system menu (LP: #1902829).
-
- -- Gunnar Hjalmarsson <gunnarhj@ubuntu.com>  Wed, 04 Nov 2020 16:59:17 +0100
-
-gnome-shell (3.38.1-1ubuntu1) groovy; urgency=medium
-
-  * Merge with debian, including new upstream release, remaining changes:
-    - Replace gnome-backgrounds dep with ubuntu-wallpapers and Suggests
-      gnome-themes-standard-data, gnome-backgrounds
-    - Add some Recommends:
-      + ubuntu-session (| gnome-session) to have the ubuntu session available
-      + xserver-xorg-legacy
-      + yaru-theme-gnome-shell for the default ubuntu theming
-    - Update debian/gbp.conf with Ubuntu settings
-    - gnome-shell-common.prerm: Remove deprecated ubuntu theme alternative
-    - ubuntu/desktop_detect.patch:
-      + add caching for desktop detection to avoid querying the current
-        desktop env variable as iterate through the list each time. For the
-        time of the Shell process, we can expect this env variable to stay
-        stable.
-    - ubuntu/smarter_alt_tab.patch:
-      + quick alt-tab (without showing up the switcher) switch only between
-        the last window of the last 2 applications to be focused instead of
-        raising all windows of those apps.
-    - ubuntu/lightdm-user-switching.patch:
-      + Allow user switching when using LightDM.
-    - ubuntu/lock_on_suspend.patch
-      + Respect Ubuntu's lock-on-suspend setting.
-    - ubuntu/background_login.patch
-      + Change default background color as we modified the default GDM color
-        for our ubuntu session.
-    - ubuntu/gdm_alternatives.patch
-      + Add support for GDM3 theme alternatives
-    - optional-hot-corner.patch
-      + enable patch proposed by upstream developer already in package (but
-        not in series) to add a settings for optional hot corner activation.
-    - main-show-an-error-message-on-gnome-shell-crash.patch,
-      global-make-possible-to-set-debug-flags-dynamically.patch,
-      main-increase-the-granularity-of-backtraces-in-SHELL_DEBU.patch,
-      main-add-backtrace-crashes-all-and-backtrace-all.patch,
-      sessionMode-add-support-for-debugFlags-parameter.patch:
-      + Improve debug JS tracing for crash reports
-    - st-scroll-view-Handle-the-case-where-scrollbars-are-NULL.patch:
-      + Fix crash on theme changes
-    - ubuntu/search-call-XUbuntuCancel-method-on-providers-when-no-dat.patch:
-      + stop searches when requested from UI
-    - magnifier-Show-cursor-when-magnifier-is-enabled-and-scale.patch:
-      + Show monitor scaled cursor when magnifier is enabled
-    - Break gnome-shell-extension-desktop-icons (<< 19.01.3+git20190814)
-  * debian/patches: Refresh
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Sun, 11 Oct 2020 02:43:11 +0200
-
-gnome-shell (3.38.1-1) unstable; urgency=medium
-
-  * New upstream release
-    - Add screen recordings to recent items
-    - Tweak peek-password feature
-    - Fix workspace glitches in overview
-    - Improve DND behavior in app picker
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Sun, 11 Oct 2020 02:04:29 +0200
-
-gnome-shell (3.38.0-2) unstable; urgency=medium
-
-  * Team upload
-  * Release to unstable
-
- -- Simon McVittie <smcv@debian.org>  Fri, 25 Sep 2020 10:25:25 +0100
-
-gnome-shell (3.38.0-1ubuntu2) groovy; urgency=medium
-
-  * debian/control:
-    - Revert "Require a known-working version of Pipewire",
-      Revert "Depend on gstreamer1.0-pipewire",
-      Revert "Enable screencasting support now that pipewire 0.3 is in
-      experimental":
-      + We don't support pipewire in yet
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Mon, 21 Sep 2020 18:40:51 +0200
-
-gnome-shell (3.38.0-1ubuntu1) groovy; urgency=medium
-
-  * Merge with debian, including new upstream release, remaining changes:
-    - Replace gnome-backgrounds dep with ubuntu-wallpapers and Suggests
-      gnome-themes-standard-data, gnome-backgrounds
-    - Add some Recommends:
-      + ubuntu-session (| gnome-session) to have the ubuntu session available
-      + xserver-xorg-legacy
-      + yaru-theme-gnome-shell for the default ubuntu theming
-    - Update debian/gbp.conf with Ubuntu settings
-    - gnome-shell-common.prerm: Remove deprecated ubuntu theme alternative
-    - ubuntu/desktop_detect.patch:
-      + add caching for desktop detection to avoid querying the current
-        desktop env variable as iterate through the list each time. For the
-        time of the Shell process, we can expect this env variable to stay
-        stable.
-    - ubuntu/smarter_alt_tab.patch:
-      + quick alt-tab (without showing up the switcher) switch only between
-        the last window of the last 2 applications to be focused instead of
-        raising all windows of those apps.
-    - ubuntu/lightdm-user-switching.patch:
-      + Allow user switching when using LightDM.
-    - ubuntu/lock_on_suspend.patch
-      + Respect Ubuntu's lock-on-suspend setting.
-    - ubuntu/background_login.patch
-      + Change default background color as we modified the default GDM color
-        for our ubuntu session.
-    - ubuntu/gdm_alternatives.patch
-      + Add support for GDM3 theme alternatives
-    - optional-hot-corner.patch
-      + enable patch proposed by upstream developer already in package (but
-        not in series) to add a settings for optional hot corner activation.
-    - main-show-an-error-message-on-gnome-shell-crash.patch,
-      global-make-possible-to-set-debug-flags-dynamically.patch,
-      main-increase-the-granularity-of-backtraces-in-SHELL_DEBU.patch,
-      main-add-backtrace-crashes-all-and-backtrace-all.patch,
-      sessionMode-add-support-for-debugFlags-parameter.patch:
-      + Improve debug JS tracing for crash reports
-    - st-scroll-view-Handle-the-case-where-scrollbars-are-NULL.patch:
-      + Fix crash on theme changes
-    - ubuntu/search-call-XUbuntuCancel-method-on-providers-when-no-dat.patch:
-      + stop searches when requested from UI
-    - magnifier-Show-cursor-when-magnifier-is-enabled-and-scale.patch:
-      + Show monitor scaled cursor when magnifier is enabled
-    - Break gnome-shell-extension-desktop-icons (<< 19.01.3+git20190814)
-  * debian/patches: Refresh
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Wed, 16 Sep 2020 15:37:47 +0200
-
-gnome-shell (3.38.0-1) experimental; urgency=medium
-
-  * New upstream release
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Wed, 16 Sep 2020 15:03:21 +0200
-
-gnome-shell (3.37.92-3) experimental; urgency=medium
-
-  * Team upload
-  * Build-depend on systemd, for systemd.pc
-
- -- Simon McVittie <smcv@debian.org>  Tue, 08 Sep 2020 23:21:34 +0100
-
-gnome-shell (3.37.92-2) experimental; urgency=medium
-
-  * Team upload
-
-  [ Georges Basile Stavracas Neto ]
-  * debian/rules: Update Meson option names
-  * Depend on gstreamer1.0-pipewire.
-    GNOME Shell's built-in screencast tool was made into a separate
-    service that uses pipewiresrc.
-
-  [ Simon McVittie ]
-  * Require a known-working version of Pipewire
-  * Remove migration path from ancient -dbg packages
-
- -- Simon McVittie <smcv@debian.org>  Tue, 08 Sep 2020 15:48:11 +0100
-
-gnome-shell (3.37.92-1) experimental; urgency=medium
-
-  * Team upload
-  * New upstream release
-    - Fix screen recorder shortcut
-    - Support cycle-group cycling only over windows in the workspace
-  * Update mutter dependency version
-  * Enable screencasting support now that pipewire 0.3 is in experimental
-
- -- Simon McVittie <smcv@debian.org>  Mon, 07 Sep 2020 20:01:41 +0100
-
-gnome-shell (3.37.91-1ubuntu1) groovy; urgency=medium
-
-  * Merge with debian, including new upstream release, remaining changes:
-    - Replace gnome-backgrounds dep with ubuntu-wallpapers and Suggests
-      gnome-themes-standard-data, gnome-backgrounds
-    - Add some Recommends:
-      + ubuntu-session (| gnome-session) to have the ubuntu session available
-      + xserver-xorg-legacy
-      + yaru-theme-gnome-shell for the default ubuntu theming
-    - Update debian/gbp.conf with Ubuntu settings
-    - gnome-shell-common.prerm: Remove deprecated ubuntu theme alternative
-    - ubuntu/desktop_detect.patch:
-      + add caching for desktop detection to avoid querying the current
-        desktop env variable as iterate through the list each time. For the
-        time of the Shell process, we can expect this env variable to stay
-        stable.
-    - ubuntu/smarter_alt_tab.patch:
-      + quick alt-tab (without showing up the switcher) switch only between
-        the last window of the last 2 applications to be focused instead of
-        raising all windows of those apps.
-    - ubuntu/lightdm-user-switching.patch:
-      + Allow user switching when using LightDM.
-    - ubuntu/lock_on_suspend.patch
-      + Respect Ubuntu's lock-on-suspend setting.
-    - ubuntu/background_login.patch
-      + Change default background color as we modified the default GDM color
-        for our ubuntu session.
-    - ubuntu/gdm_alternatives.patch
-      + Add support for GDM3 theme alternatives
-    - optional-hot-corner.patch
-      + enable patch proposed by upstream developer already in package (but
-        not in series) to add a settings for optional hot corner activation.
-    - main-show-an-error-message-on-gnome-shell-crash.patch,
-      global-make-possible-to-set-debug-flags-dynamically.patch,
-      main-increase-the-granularity-of-backtraces-in-SHELL_DEBU.patch,
-      main-add-backtrace-crashes-all-and-backtrace-all.patch,
-      sessionMode-add-support-for-debugFlags-parameter.patch:
-      + Improve debug JS tracing for crash reports
-    - st-scroll-view-Handle-the-case-where-scrollbars-are-NULL.patch:
-      + Fix crash on theme changes
-    - ubuntu/search-call-XUbuntuCancel-method-on-providers-when-no-dat.patch:
-      + stop searches when requested from UI
-    - magnifier-Show-cursor-when-magnifier-is-enabled-and-scale.patch:
-      + Show monitor scaled cursor when magnifier is enabled
-    - Break gnome-shell-extension-desktop-icons (<< 19.01.3+git20190814)
-  * debian/patches: Refreshed
-  * debian/control:
-    - Set breaks on upcoming core extensions. This update is going to break
-      them, so we need extensions updates before migra
-    - Set breaks on upcoming yaru theme.
-      There are not big deals using the current yaru, but better to wait for a
-      suynced one.
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Thu, 27 Aug 2020 23:14:01 +0200
-
-gnome-shell (3.37.91-1) experimental; urgency=medium
-
-  * New upstream release:
-    - Inhibit remote access when disabled by session mode
-    - Remove Frequent view from app picker
-    - Allow rearranging items in app picker
-    - Add support for parental controls filtering
-    - Support pre-authenticated logins in vmware environments (LP: #1886592)
-    - Update microphone icon on input volume changes
-    - Support prepending workspace with horizontal layouts
-    - Move calendar events out of notifications list
-    - Expose actor tree in looking glass
-    - Add support for "PrefersNonDefaultGPU" desktop key
-    - Move screencasting into a separate service (needs pipewire)
-    - Default to not installing updates on low battery
-    - Refactor and clean up app picker pagination (LP: #1873725)
-    - Misc fixes and memory improvements
-  * debian/control:
-    - Depend on debhelper-compat = 13
-    - Remove useless dependency on mutter (the binary)
-    - Test depend on gir1.2-upowerglib-1.0
-    - Update build dependencies to match upstream
-    - Remove leading space in gnome-shell-extension-prefs description
-  * debian/patches: Drop them all
-  * debian/rules:
-    - Don't manually set --fail-missing (included in dh 13)
-    - Remove uneeded test environment variables overrides (included in dh 13)
-  * debian/sources/lintian-override:
-    - Override some desktop files related warnings
-  * debian/gbp.conf: Point to upstream/latest
-  * debian/watch: Monitor unstable versions
-
- -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Thu, 27 Aug 2020 17:34:56 +0200
+ -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Sat, 19 Sep 2020 17:48:17 +0200
 
 gnome-shell (3.36.6-1) unstable; urgency=medium
 
@@ -892,11 +70,20 @@ gnome-shell (3.36.5-1) unstable; urgency=medium
 
  -- Simon McVittie <smcv@debian.org>  Wed, 12 Aug 2020 21:28:22 +0100
 
-gnome-shell (3.36.4-1ubuntu2~build1) groovy; urgency=medium
+gnome-shell (3.36.4-1ubuntu1~20.04.2) focal-security; urgency=medium
 
-  * Rebuild with the new libedataserver soname
+  * SECURITY UPDATE: password dialog box information disclosure
+    - debian/patches/CVE-2020-17489.patch: reset auth prompt on vt switch
+      before fade in in js/gdm/loginDialog.js.
+    - CVE-2020-17489
 
- -- Ken VanDine <ken.vandine@canonical.com>  Tue, 18 Aug 2020 12:59:03 -0400
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Mon, 17 Aug 2020 13:26:51 -0400
+
+gnome-shell (3.36.4-1ubuntu1~20.04.1) focal; urgency=medium
+
+  * No change backport to focal
+
+ -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Tue, 21 Jul 2020 11:37:31 +0200
 
 gnome-shell (3.36.4-1ubuntu1) groovy; urgency=medium
 
@@ -945,7 +132,7 @@ gnome-shell (3.36.4-1ubuntu1) groovy; urgency=medium
     - Break gnome-shell-extension-desktop-icons (<< 19.01.3+git20190814)
   * d/p/ubuntu/gdm_alternatives.patch,
     d/p/ubuntu/secure_mode_extension.patch:
-    - Refreshed as pr upstream changes
+    - Refreshed as per upstream changes
 
  -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Mon, 20 Jul 2020 18:18:57 +0200
 
@@ -977,6 +164,12 @@ gnome-shell (3.36.4-1) unstable; urgency=medium
 
  -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Mon, 20 Jul 2020 15:17:47 +0200
 
+gnome-shell (3.36.3-1ubuntu1~20.04.2) focal; urgency=medium
+
+  * No change backport to focal
+
+ -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Fri, 05 Jun 2020 20:20:50 +0200
+
 gnome-shell (3.36.3-1ubuntu2) groovy; urgency=medium
 
   * d/p/shell-mime-sniffer-Ignore-invalid-file-content-type.patch:
@@ -984,6 +177,12 @@ gnome-shell (3.36.3-1ubuntu2) groovy; urgency=medium
       type (LP: #1865300)
 
  -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Fri, 05 Jun 2020 20:14:47 +0200
+
+gnome-shell (3.36.3-1ubuntu1~20.04.1) focal; urgency=medium
+
+  * No change backport to focal (LP: #1881973)
+
+ -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Thu, 04 Jun 2020 22:34:17 +0200
 
 gnome-shell (3.36.3-1ubuntu1) groovy; urgency=medium
 
@@ -1070,6 +269,14 @@ gnome-shell (3.36.2+64+ge74e691d8-1) experimental; urgency=medium
     package
 
  -- Simon McVittie <smcv@debian.org>  Sat, 30 May 2020 15:48:25 +0100
+
+gnome-shell (3.36.2-1ubuntu1~20.04.1) focal; urgency=medium
+
+  * No change backport to focal (LP: #1877212)
+  * debian/gbp.conf: Set branch to ubuntu/focal
+  * debian/control: Update VCS references to focal branch
+
+ -- Marco Trevisan (Treviño) <marco@ubuntu.com>  Thu, 07 May 2020 04:12:37 +0200
 
 gnome-shell (3.36.2-1ubuntu1) groovy; urgency=medium
 

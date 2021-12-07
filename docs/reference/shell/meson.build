@@ -3,7 +3,12 @@ private_headers = [
   'gactionobservable.h',
   'gactionobserver.h',
   'shell-network-agent.h',
+  'shell-recorder-src.h'
 ]
+
+if not enable_recorder
+  private_headers += 'shell-recorder.h'
+endif
 
 exclude_directories = [
   'calendar-server',

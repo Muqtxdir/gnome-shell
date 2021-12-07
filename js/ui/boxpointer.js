@@ -1,7 +1,7 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 /* exported BoxPointer */
 
-const { Clutter, GObject, Meta, St } = imports.gi;
+const { Clutter, GObject, Shell, St } = imports.gi;
 
 const Main = imports.ui.main;
 
@@ -47,13 +47,6 @@ var BoxPointer = GObject.registerClass({
         this.set_child_above_sibling(this.bin, this._border);
         this._sourceAlignment = 0.5;
         this._muteInput = true;
-
-        this.connect('notify::visible', () => {
-            if (this.visible)
-                Meta.disable_unredirect_for_display(global.display);
-            else
-                Meta.enable_unredirect_for_display(global.display);
-        });
 
         this.connect('destroy', this._onDestroy.bind(this));
     }
@@ -203,13 +196,13 @@ var BoxPointer = GObject.registerClass({
         return themeNode.adjust_preferred_height(...height);
     }
 
-    vfunc_allocate(box) {
+    vfunc_allocate(box, flags) {
         if (this._sourceActor && this._sourceActor.mapped) {
             this._reposition(box);
             this._updateFlip(box);
         }
 
-        this.set_allocation(box);
+        this.set_allocation(box, flags);
 
         let themeNode = this.get_theme_node();
         let borderWidth = themeNode.get_length('-arrow-border-width');
@@ -221,7 +214,7 @@ var BoxPointer = GObject.registerClass({
         childBox.y1 = 0;
         childBox.x2 = availWidth;
         childBox.y2 = availHeight;
-        this._border.allocate(childBox);
+        this._border.allocate(childBox, flags);
 
         childBox.x1 = borderWidth;
         childBox.y1 = borderWidth;
@@ -241,7 +234,7 @@ var BoxPointer = GObject.registerClass({
             childBox.x2 -= rise;
             break;
         }
-        this.bin.allocate(childBox);
+        this.bin.allocate(childBox, flags);
     }
 
     _drawBorder(area) {
@@ -460,21 +453,15 @@ var BoxPointer = GObject.registerClass({
         let alignment = this._arrowAlignment;
         let monitorIndex = Main.layoutManager.findIndexForActor(sourceActor);
 
-        this._sourceExtents = sourceActor.get_transformed_extents();
+        this._sourceAllocation = Shell.util_get_transformed_allocation(sourceActor);
         this._workArea = Main.layoutManager.getWorkAreaForMonitor(monitorIndex);
 
         // Position correctly relative to the sourceActor
-        const sourceAllocation = sourceActor.get_allocation_box();
-        const sourceContentBox = sourceActor instanceof St.Widget
-            ? sourceActor.get_theme_node().get_content_box(sourceAllocation)
-            : new Clutter.ActorBox({
-                x2: sourceAllocation.get_width(),
-                y2: sourceAllocation.get_height(),
-            });
-        let sourceTopLeft = this._sourceExtents.get_top_left();
-        let sourceBottomRight = this._sourceExtents.get_bottom_right();
-        let sourceCenterX = sourceTopLeft.x + sourceContentBox.x1 + (sourceContentBox.x2 - sourceContentBox.x1) * this._sourceAlignment;
-        let sourceCenterY = sourceTopLeft.y + sourceContentBox.y1 + (sourceContentBox.y2 - sourceContentBox.y1) * this._sourceAlignment;
+        let sourceNode = sourceActor.get_theme_node();
+        let sourceContentBox = sourceNode.get_content_box(sourceActor.get_allocation_box());
+        let sourceAllocation = this._sourceAllocation;
+        let sourceCenterX = sourceAllocation.x1 + sourceContentBox.x1 + (sourceContentBox.x2 - sourceContentBox.x1) * this._sourceAlignment;
+        let sourceCenterY = sourceAllocation.y1 + sourceContentBox.y1 + (sourceContentBox.y2 - sourceContentBox.y1) * this._sourceAlignment;
         let [, , natWidth, natHeight] = this.get_preferred_size();
 
         // We also want to keep it onscreen, and separated from the
@@ -494,16 +481,16 @@ var BoxPointer = GObject.registerClass({
 
         switch (this._arrowSide) {
         case St.Side.TOP:
-            resY = sourceBottomRight.y + gap;
+            resY = sourceAllocation.y2 + gap;
             break;
         case St.Side.BOTTOM:
-            resY = sourceTopLeft.y - natHeight - gap;
+            resY = sourceAllocation.y1 - natHeight - gap;
             break;
         case St.Side.LEFT:
-            resX = sourceBottomRight.x + gap;
+            resX = sourceAllocation.x2 + gap;
             break;
         case St.Side.RIGHT:
-            resX = sourceTopLeft.x - natWidth - gap;
+            resX = sourceAllocation.x1 - natWidth - gap;
             break;
         }
 
@@ -559,7 +546,7 @@ var BoxPointer = GObject.registerClass({
                 arrowOrigin = y1;
             } else if (arrowOrigin >= (y2 - (borderRadius + halfBase))) {
                 if (arrowOrigin < y2)
-                    resY -= y2 - arrowOrigin;
+                    resX -= y2 - arrowOrigin;
                 arrowOrigin = y2;
             }
             break;
@@ -599,30 +586,29 @@ var BoxPointer = GObject.registerClass({
     }
 
     _calculateArrowSide(arrowSide) {
-        let sourceTopLeft = this._sourceExtents.get_top_left();
-        let sourceBottomRight = this._sourceExtents.get_bottom_right();
+        let sourceAllocation = this._sourceAllocation;
         let [, , boxWidth, boxHeight] = this.get_preferred_size();
         let workarea = this._workArea;
 
         switch (arrowSide) {
         case St.Side.TOP:
-            if (sourceBottomRight.y + boxHeight > workarea.y + workarea.height &&
-                boxHeight < sourceTopLeft.y - workarea.y)
+            if (sourceAllocation.y2 + boxHeight > workarea.y + workarea.height &&
+                boxHeight < sourceAllocation.y1 - workarea.y)
                 return St.Side.BOTTOM;
             break;
         case St.Side.BOTTOM:
-            if (sourceTopLeft.y - boxHeight < workarea.y &&
-                boxHeight < workarea.y + workarea.height - sourceBottomRight.y)
+            if (sourceAllocation.y1 - boxHeight < workarea.y &&
+                boxHeight < workarea.y + workarea.height - sourceAllocation.y2)
                 return St.Side.TOP;
             break;
         case St.Side.LEFT:
-            if (sourceBottomRight.x + boxWidth > workarea.x + workarea.width &&
-                boxWidth < sourceTopLeft.x - workarea.x)
+            if (sourceAllocation.x2 + boxWidth > workarea.x + workarea.width &&
+                boxWidth < sourceAllocation.x1 - workarea.x)
                 return St.Side.RIGHT;
             break;
         case St.Side.RIGHT:
-            if (sourceTopLeft.x - boxWidth < workarea.x &&
-                boxWidth < workarea.x + workarea.width - sourceBottomRight.x)
+            if (sourceAllocation.x1 - boxWidth < workarea.x &&
+                boxWidth < workarea.x + workarea.width - sourceAllocation.x2)
                 return St.Side.LEFT;
             break;
         }

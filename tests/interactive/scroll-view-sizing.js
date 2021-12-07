@@ -98,12 +98,13 @@ class FlowedBoxes extends St.Widget {
         return [height, height];
     }
 
-    vfunc_allocate(box) {
-        this.set_allocation(box);
+    vfunc_allocate(box, flags) {
+        this.set_allocation(box, flags);
 
 	this._layoutChildren(box.x2 - box.x1,
            function(child, x1, y1, x2, y2) {
-	       child.allocate(new Clutter.ActorBox({ x1: x1, y1: y1, x2: x2, y2: y2 }));
+	       child.allocate(new Clutter.ActorBox({ x1: x1, y1: y1, x2: x2, y2: y2 }),
+			      flags);
 	   });
     }
 });
@@ -184,8 +185,8 @@ class SizingIllustrator extends St.Widget {
         return [0, 400];
     }
 
-    vfunc_allocate(box) {
-        this.set_allocation(box);
+    vfunc_allocate(box, flags) {
+        this.set_allocation(box, flags);
 
         box = this.get_theme_node().get_content_box(box);
 
@@ -193,7 +194,8 @@ class SizingIllustrator extends St.Widget {
 	let allocHeight = box.y2 - box.y1;
 
 	function alloc(child, x1, y1, x2, y2) {
-	    child.allocate(new Clutter.ActorBox({ x1: x1, y1: y1, x2: x2, y2: y2 }));
+	    child.allocate(new Clutter.ActorBox({ x1: x1, y1: y1, x2: x2, y2: y2 }),
+	                   flags);
 	}
 
 	alloc(this.child, 0, 0, this.width, this.height);

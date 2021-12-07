@@ -133,7 +133,7 @@ class Dialog extends St.Widget {
             y_expand: true,
             label,
         });
-        button.connect('clicked', () => action());
+        button.connect('clicked', action);
 
         buttonInfo['button'] = button;
 
@@ -220,10 +220,11 @@ var MessageDialogContent = GObject.registerClass({
 
             this._updateTitleStyleLater = Meta.later_add(Meta.LaterType.BEFORE_REDRAW, () => {
                 this._updateTitleStyleLater = 0;
-                this._title.add_style_class_name('lightweight');
+                this._title.add_style_class_name('leightweight');
                 return GLib.SOURCE_REMOVE;
             });
         }
+
     }
 
     set title(title) {
@@ -232,7 +233,7 @@ var MessageDialogContent = GObject.registerClass({
 
         _setLabel(this._title, title);
 
-        this._title.remove_style_class_name('lightweight');
+        this._title.remove_style_class_name('leightweight');
         this._updateTitleStyle();
 
         this.notify('title');
@@ -336,11 +337,13 @@ var ListSectionItem = GObject.registerClass({
         this.add_child(textLayout);
     }
 
-    get iconActor() {
+    // eslint-disable-next-line camelcase
+    get icon_actor() {
         return this._iconActorBin.get_child();
     }
 
-    set iconActor(actor) {
+    // eslint-disable-next-line camelcase
+    set icon_actor(actor) {
         this._iconActorBin.set_child(actor);
         this.notify('icon-actor');
     }

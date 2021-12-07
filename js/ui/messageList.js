@@ -4,6 +4,7 @@ const { Atk, Clutter, Gio, GLib,
 const Main = imports.ui.main;
 const MessageTray = imports.ui.messageTray;
 
+const Calendar = imports.ui.calendar;
 const Util = imports.misc.util;
 
 var MESSAGE_ANIMATION_TIME = 100;
@@ -284,13 +285,14 @@ var LabelExpanderLayout = GObject.registerClass({
         return [min, nat];
     }
 
-    vfunc_allocate(container, box) {
+    vfunc_allocate(container, box, flags) {
         for (let i = 0; i < container.get_n_children(); i++) {
             let child = container.get_child_at_index(i);
 
             if (child.visible)
-                child.allocate(box);
+                child.allocate(box, flags);
         }
+
     }
 });
 
@@ -570,6 +572,7 @@ var MessageListSection = GObject.registerClass({
             Main.sessionMode.disconnect(id);
         });
 
+        this._date = new Date();
         this._empty = true;
         this._canClear = false;
         this._sync();
@@ -593,6 +596,13 @@ var MessageListSection = GObject.registerClass({
 
     get allowed() {
         return true;
+    }
+
+    setDate(date) {
+        if (Calendar.sameDay(date, this._date))
+            return;
+        this._date = date;
+        this._sync();
     }
 
     addMessage(message, animate) {
@@ -677,10 +687,12 @@ var MessageListSection = GObject.registerClass({
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD,
                 onComplete: () => {
                     listItem.destroy();
+                    global.sync_pointer();
                 },
             });
         } else {
             listItem.destroy();
+            global.sync_pointer();
         }
     }
 

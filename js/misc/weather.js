@@ -7,8 +7,6 @@ const PermissionStore = imports.misc.permissionStore;
 
 const { loadInterfaceXML } = imports.misc.fileUtils;
 
-Gio._promisify(Geoclue.Simple, 'new', 'new_finish');
-
 const WeatherIntegrationIface = loadInterfaceXML('org.gnome.Shell.WeatherIntegration');
 
 const WEATHER_BUS_NAME = 'org.gnome.Weather';
@@ -68,15 +66,11 @@ var WeatherClient = class {
 
         this._world = GWeather.Location.get_world();
 
-        const providers =
-            GWeather.Provider.METAR |
-            GWeather.Provider.MET_NO |
-            GWeather.Provider.OWM;
-        this._weatherInfo = new GWeather.Info({
-            application_id: 'org.gnome.Shell',
-            contact_info: 'https://gitlab.gnome.org/GNOME/gnome-shell/-/raw/master/gnome-shell.doap',
-            enabled_providers: providers,
-        });
+        this._providers = GWeather.Provider.METAR |
+                          GWeather.Provider.YR_NO |
+                          GWeather.Provider.OWM;
+
+        this._weatherInfo = new GWeather.Info({ enabled_providers: 0 });
         this._weatherInfo.connect_after('updated', () => {
             this._lastUpdate = GLib.DateTime.new_now_local();
             this.emit('changed');
@@ -85,7 +79,16 @@ var WeatherClient = class {
         this._weatherApp = null;
         this._weatherProxy = null;
 
-        this._createWeatherProxy();
+        let nodeInfo = Gio.DBusNodeInfo.new_for_xml(WeatherIntegrationIface);
+        Gio.DBusProxy.new(
+            Gio.DBus.session,
+            Gio.DBusProxyFlags.DO_NOT_AUTO_START | Gio.DBusProxyFlags.GET_INVALIDATED_PROPERTIES,
+            nodeInfo.lookup_interface(WEATHER_INTEGRATION_IFACE),
+            WEATHER_BUS_NAME,
+            WEATHER_OBJECT_PATH,
+            WEATHER_INTEGRATION_IFACE,
+            null,
+            this._onWeatherProxyReady.bind(this));
 
         this._settings = new Gio.Settings({
             schema_id: 'org.gnome.shell.weather',
@@ -143,17 +146,9 @@ var WeatherClient = class {
                (!this._needsAuth || this._weatherAuthorized);
     }
 
-    async _createWeatherProxy() {
-        const nodeInfo = Gio.DBusNodeInfo.new_for_xml(WeatherIntegrationIface);
+    _onWeatherProxyReady(o, res) {
         try {
-            this._weatherProxy = await Gio.DBusProxy.new(
-                Gio.DBus.session,
-                Gio.DBusProxyFlags.DO_NOT_AUTO_START | Gio.DBusProxyFlags.GET_INVALIDATED_PROPERTIES,
-                nodeInfo.lookup_interface(WEATHER_INTEGRATION_IFACE),
-                WEATHER_BUS_NAME,
-                WEATHER_OBJECT_PATH,
-                WEATHER_INTEGRATION_IFACE,
-                null);
+            this._weatherProxy = Gio.DBusProxy.new_finish(res);
         } catch (e) {
             log(`Failed to create GNOME Weather proxy: ${e}`);
             return;
@@ -220,6 +215,8 @@ var WeatherClient = class {
         this._weatherInfo.set_location(location);
         this._locationValid = location != null;
 
+        this._weatherInfo.set_enabled_providers(location ? this._providers : 0);
+
         if (location)
             this._loadInfo();
         else
@@ -242,23 +239,25 @@ var WeatherClient = class {
         }
     }
 
-    async _startGClueService() {
+    _startGClueService() {
         if (this._gclueStarting)
             return;
 
         this._gclueStarting = true;
 
-        try {
-            this._gclueService = await Geoclue.Simple.new(
-                'org.gnome.Shell', Geoclue.AccuracyLevel.CITY, null);
-        } catch (e) {
-            log(`Failed to connect to Geoclue2 service: ${e.message}`);
-            this._setLocation(this._mostRecentLocation);
-            return;
-        }
-        this._gclueStarted = true;
-        this._gclueService.get_client().distance_threshold = 100;
-        this._updateLocationMonitoring();
+        Geoclue.Simple.new('org.gnome.Shell', Geoclue.AccuracyLevel.CITY, null,
+            (o, res) => {
+                try {
+                    this._gclueService = Geoclue.Simple.new_finish(res);
+                } catch (e) {
+                    log(`Failed to connect to Geoclue2 service: ${e.message}`);
+                    this._setLocation(this._mostRecentLocation);
+                    return;
+                }
+                this._gclueStarted = true;
+                this._gclueService.get_client().distance_threshold = 100;
+                this._updateLocationMonitoring();
+            });
     }
 
     _onGClueLocationChanged() {

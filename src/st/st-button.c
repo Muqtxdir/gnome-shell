@@ -83,6 +83,8 @@ struct _StButtonPrivate
   guint  pressed     : 3;
   guint  grabbed     : 3;
   guint  is_checked  : 1;
+
+  gint   spacing;
 };
 
 static guint button_signals[LAST_SIGNAL] = { 0, };
@@ -109,9 +111,16 @@ static void
 st_button_style_changed (StWidget *widget)
 {
   StButton *button = ST_BUTTON (widget);
+  StButtonPrivate *priv = st_button_get_instance_private (button);
   StButtonClass *button_class = ST_BUTTON_GET_CLASS (button);
+  StThemeNode *theme_node = st_widget_get_theme_node (ST_WIDGET (button));
+  double spacing;
 
   ST_WIDGET_CLASS (st_button_parent_class)->style_changed (widget);
+
+  spacing = 6;
+  st_theme_node_lookup_length (theme_node, "border-spacing", FALSE, &spacing);
+  priv->spacing = (int)(0.5 + spacing);
 
   /* update the label styling */
   st_button_update_label_style (button);
@@ -432,7 +441,7 @@ st_button_get_property (GObject    *gobject,
       g_value_set_boolean (value, priv->is_checked);
       break;
     case PROP_PRESSED:
-      g_value_set_boolean (value, priv->pressed != 0 || priv->press_sequence != NULL);
+      g_value_set_boolean (value, priv->pressed != 0);
       break;
 
 
@@ -475,11 +484,6 @@ st_button_class_init (StButtonClass *klass)
   widget_class->style_changed = st_button_style_changed;
   widget_class->get_accessible_type = st_button_accessible_get_type;
 
-  /**
-   * StButton:label:
-   *
-   * The label of the #StButton.
-   */
   props[PROP_LABEL] =
     g_param_spec_string ("label",
                          "Label",
@@ -487,11 +491,6 @@ st_button_class_init (StButtonClass *klass)
                          NULL,
                          ST_PARAM_READWRITE);
 
-  /**
-   * StButton:button-mask:
-   *
-   * Which buttons will trigger the #StButton::clicked signal.
-   */
   props[PROP_BUTTON_MASK] =
     g_param_spec_flags ("button-mask",
                         "Button mask",
@@ -499,11 +498,6 @@ st_button_class_init (StButtonClass *klass)
                         ST_TYPE_BUTTON_MASK, ST_BUTTON_ONE,
                         ST_PARAM_READWRITE);
 
-  /**
-   * StButton:toggle-mode:
-   *
-   * Whether the #StButton is operating in toggle mode (on/off).
-   */
   props[PROP_TOGGLE_MODE] =
     g_param_spec_boolean ("toggle-mode",
                           "Toggle Mode",
@@ -511,15 +505,6 @@ st_button_class_init (StButtonClass *klass)
                           FALSE,
                           ST_PARAM_READWRITE);
 
-  /**
-   * StButton:checked:
-   *
-   * If #StButton:toggle-mode is %TRUE, indicates if the #StButton is toggled
-   * "on" or "off".
-   *
-   * When the value is %TRUE, the #StButton will have the `checked` CSS
-   * pseudo-class set.
-   */
   props[PROP_CHECKED] =
     g_param_spec_boolean ("checked",
                           "Checked",
@@ -527,12 +512,6 @@ st_button_class_init (StButtonClass *klass)
                           FALSE,
                           ST_PARAM_READWRITE);
 
-  /**
-   * StButton:pressed:
-   *
-   * In contrast to #StButton:checked, this property indicates whether the
-   * #StButton is being actively pressed, rather than just in the "on" state.
-   */
   props[PROP_PRESSED] =
     g_param_spec_boolean ("pressed",
                           "Pressed",
@@ -566,6 +545,7 @@ st_button_init (StButton *button)
 {
   StButtonPrivate *priv = st_button_get_instance_private (button);
 
+  priv->spacing = 6;
   priv->button_mask = ST_BUTTON_ONE;
 
   clutter_actor_set_reactive (CLUTTER_ACTOR (button), TRUE);
@@ -603,10 +583,9 @@ st_button_new_with_label (const gchar *text)
  * st_button_get_label:
  * @button: a #StButton
  *
- * Get the text displayed on the button. If the label is empty, an empty string
- * will be returned instead of %NULL.
+ * Get the text displayed on the button
  *
- * Returns: (transfer none): the text for the button
+ * Returns: the text for the button. This must not be freed by the application
  */
 const gchar *
 st_button_get_label (StButton *button)
@@ -619,9 +598,9 @@ st_button_get_label (StButton *button)
 /**
  * st_button_set_label:
  * @button: a #Stbutton
- * @text: (nullable): text to set the label to
+ * @text: text to set the label to
  *
- * Sets the text displayed on the button.
+ * Sets the text displayed on the button
  */
 void
 st_button_set_label (StButton    *button,
@@ -747,7 +726,7 @@ st_button_set_toggle_mode (StButton *button,
  * st_button_get_checked:
  * @button: a #StButton
  *
- * Get the #StButton:checked property of a #StButton that is in toggle mode.
+ * Get the state of the button that is in toggle mode.
  *
  * Returns: %TRUE if the button is checked, or %FALSE if not
  */
@@ -764,8 +743,8 @@ st_button_get_checked (StButton *button)
  * @button: a #Stbutton
  * @checked: %TRUE or %FALSE
  *
- * Set the #StButton:checked property of the button. This is only really useful
- * if the button has #StButton:toggle-mode property set to %TRUE.
+ * Sets the pressed state of the button. This is only really useful if the
+ * button has #toggle-mode mode set to %TRUE.
  */
 void
 st_button_set_checked (StButton *button,
@@ -794,9 +773,9 @@ st_button_set_checked (StButton *button,
  * @button: an #StButton
  *
  * If this widget is holding a pointer grab, this function will
- * will ungrab it, and reset the #StButton:pressed state.  The effect is
+ * will ungrab it, and reset the pressed state.  The effect is
  * similar to if the user had released the mouse button, but without
- * emitting the #StButton::clicked signal.
+ * emitting the clicked signal.
  *
  * This function is useful if for example you want to do something
  * after the user is holding the mouse button for a given period of

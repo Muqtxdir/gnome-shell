@@ -43,7 +43,6 @@ var AudioDeviceSelectionDialog = GObject.registerClass({
 
         this._selectionBox = new St.BoxLayout({
             style_class: 'audio-selection-box',
-            x_align: Clutter.ActorAlign.CENTER,
             x_expand: true,
         });
         content.add_child(this._selectionBox);
@@ -51,16 +50,12 @@ var AudioDeviceSelectionDialog = GObject.registerClass({
         this.contentLayout.add_child(content);
 
         if (Main.sessionMode.allowSettings) {
-            this.addButton({
-                action: this._openSettings.bind(this),
-                label: _('Sound Settings'),
-            });
+            this.addButton({ action: this._openSettings.bind(this),
+                             label: _("Sound Settings") });
         }
-        this.addButton({
-            action: () => this.close(),
-            label: _('Cancel'),
-            key: Clutter.KEY_Escape,
-        });
+        this.addButton({ action: this.close.bind(this),
+                         label: _("Cancel"),
+                         key: Clutter.KEY_Escape });
     }
 
     _getDeviceLabel(device) {
@@ -152,8 +147,9 @@ var AudioDeviceSelectionDBus = class AudioDeviceSelectionDBus {
     _onDeviceSelected(dialog, device) {
         let connection = this._dbusImpl.get_connection();
         let info = this._dbusImpl.get_info();
-        const deviceName = Object.keys(AudioDevice)
-            .filter(dev => AudioDevice[dev] === device)[0].toLowerCase();
+        let deviceName = Object.keys(AudioDevice).filter(
+            dev => AudioDevice[dev] == device
+        )[0].toLowerCase();
         connection.emit_signal(this._audioSelectionDialog._sender,
                                this._dbusImpl.get_object_path(),
                                info ? info.name : null,

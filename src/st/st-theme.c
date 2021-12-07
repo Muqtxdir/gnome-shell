@@ -250,16 +250,6 @@ insert_stylesheet (StTheme      *theme,
   g_hash_table_insert (theme->files_by_stylesheet, stylesheet, file);
 }
 
-/**
- * st_theme_load_stylesheet:
- * @theme: a #StTheme
- * @file: a #GFile
- * @error: a #GError
- *
- * Load the stylesheet associated with @file.
- *
- * Returns: %TRUE if successful
- */
 gboolean
 st_theme_load_stylesheet (StTheme    *theme,
                           GFile      *file,
@@ -281,14 +271,6 @@ st_theme_load_stylesheet (StTheme    *theme,
   return TRUE;
 }
 
-/**
- * st_theme_unload_stylesheet:
- * @theme: a #StTheme
- * @file: a #GFile
- *
- * Unload the stylesheet associated with @file. If @file was not loaded this
- * function does nothing.
- */
 void
 st_theme_unload_stylesheet (StTheme    *theme,
                             GFile      *file)
@@ -318,8 +300,6 @@ st_theme_unload_stylesheet (StTheme    *theme,
 /**
  * st_theme_get_custom_stylesheets:
  * @theme: an #StTheme
- *
- * Get a list of the stylesheet files loaded with st_theme_load_stylesheet().
  *
  * Returns: (transfer full) (element-type GFile): the list of stylesheet files
  *          that were loaded with st_theme_load_stylesheet()
@@ -481,7 +461,7 @@ st_theme_get_property (GObject    *object,
  * @default_stylesheet: The lowest priority stylesheet, representing global default styling;
  *   this is associated with the CSS "user agent" stylesheet, may be %NULL
  *
- * Returns: the newly created theme object
+ * Return value: the newly created theme object
  **/
 StTheme *
 st_theme_new (GFile       *application_stylesheet,
@@ -866,7 +846,7 @@ add_matched_properties (StTheme      *a_this,
   for (cur_stmt = a_nodesheet->statements; cur_stmt; cur_stmt = cur_stmt->next)
     {
       /*
-       *initialize the selector list in which we will
+       *initialyze the selector list in which we will
        *really perform the search.
        */
       sel_list = NULL;
@@ -960,7 +940,7 @@ add_matched_properties (StTheme      *a_this,
                * thread-safety anyways.)
                *
                * Once we've sorted the properties, the specificity no longer
-               * matters and it can be safely overridden.
+               * matters and it can be safely overriden.
                */
               cr_simple_sel_compute_specificity (cur_sel->simple_sel);
 

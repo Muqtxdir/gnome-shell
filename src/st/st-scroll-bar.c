@@ -192,7 +192,8 @@ st_scroll_bar_unmap (ClutterActor *actor)
 
 static void
 scroll_bar_allocate_children (StScrollBar           *bar,
-                              const ClutterActorBox *box)
+                              const ClutterActorBox *box,
+                              ClutterAllocationFlags flags)
 {
   StScrollBarPrivate *priv = st_scroll_bar_get_instance_private (bar);
   StThemeNode *theme_node = st_widget_get_theme_node (ST_WIDGET (bar));
@@ -200,11 +201,23 @@ scroll_bar_allocate_children (StScrollBar           *bar,
 
   st_theme_node_get_content_box (theme_node, box, &content_box);
 
-  trough_box.x1 = content_box.x1;
-  trough_box.y1 = content_box.y1;
-  trough_box.x2 = content_box.x2;
-  trough_box.y2 = content_box.y2;
-  clutter_actor_allocate (priv->trough, &trough_box);
+  if (priv->vertical)
+    {
+      trough_box.x1 = content_box.x1;
+      trough_box.y1 = content_box.y1;
+      trough_box.x2 = content_box.x2;
+      trough_box.y2 = content_box.y2;
+      clutter_actor_allocate (priv->trough, &trough_box, flags);
+    }
+  else
+    {
+      trough_box.x1 = content_box.x1;
+      trough_box.y1 = content_box.y1;
+      trough_box.x2 = content_box.x2;
+      trough_box.y2 = content_box.y2;
+      clutter_actor_allocate (priv->trough, &trough_box, flags);
+    }
+
 
   if (priv->adjustment)
     {
@@ -250,29 +263,20 @@ scroll_bar_allocate_children (StScrollBar           *bar,
         }
       else
         {
-          ClutterTextDirection direction;
-
           avail_size = content_box.x2 - content_box.x1;
           handle_size = increment * avail_size;
           handle_size = CLAMP (handle_size, min_size, max_size);
 
-          direction = clutter_actor_get_text_direction (CLUTTER_ACTOR (bar));
-          if (direction == CLUTTER_TEXT_DIRECTION_RTL)
-            {
-              handle_box.x2 = content_box.x2 - position * (avail_size - handle_size);
-              handle_box.x1 = handle_box.x2 - handle_size;
-            }
-          else
-            {
-              handle_box.x1 = content_box.x1 + position * (avail_size - handle_size);
-              handle_box.x2 = handle_box.x1 + handle_size;
-            }
-
+          handle_box.x1 = content_box.x1 + position * (avail_size - handle_size);
           handle_box.y1 = content_box.y1;
+
+          handle_box.x2 = handle_box.x1 + handle_size;
           handle_box.y2 = content_box.y2;
         }
 
-      clutter_actor_allocate (priv->handle, &handle_box);
+      clutter_actor_allocate (priv->handle,
+                              &handle_box,
+                              flags);
     }
 }
 
@@ -358,13 +362,14 @@ st_scroll_bar_get_preferred_height (ClutterActor *self,
 
 static void
 st_scroll_bar_allocate (ClutterActor          *actor,
-                        const ClutterActorBox *box)
+                        const ClutterActorBox *box,
+                        ClutterAllocationFlags flags)
 {
   StScrollBar *bar = ST_SCROLL_BAR (actor);
 
-  clutter_actor_set_allocation (actor, box);
+  clutter_actor_set_allocation (actor, box, flags);
 
-  scroll_bar_allocate_children (bar, box);
+  scroll_bar_allocate_children (bar, box, flags);
 }
 
 static void
@@ -387,7 +392,7 @@ scroll_bar_update_positions (StScrollBar *bar)
     return;
 
   clutter_actor_get_allocation_box (CLUTTER_ACTOR (bar), &box);
-  scroll_bar_allocate_children (bar, &box);
+  scroll_bar_allocate_children (bar, &box, CLUTTER_ALLOCATION_NONE);
 }
 
 static void
@@ -463,24 +468,16 @@ st_scroll_bar_scroll_event (ClutterActor       *actor,
                             ClutterScrollEvent *event)
 {
   StScrollBarPrivate *priv = ST_SCROLL_BAR_PRIVATE (actor);
-  ClutterTextDirection direction;
-  ClutterScrollDirection scroll_dir;
 
   if (clutter_event_is_pointer_emulated ((ClutterEvent *) event))
     return TRUE;
 
-  direction = clutter_actor_get_text_direction (actor);
-  scroll_dir = event->direction;
-
-  switch (scroll_dir)
+  switch (event->direction)
     {
     case CLUTTER_SCROLL_SMOOTH:
       {
         gdouble delta_x, delta_y;
         clutter_event_get_scroll_delta ((ClutterEvent *)event, &delta_x, &delta_y);
-
-        if (direction == CLUTTER_TEXT_DIRECTION_RTL)
-          delta_x *= -1;
 
         if (priv->vertical)
           st_adjustment_adjust_for_scroll_event (priv->adjustment, delta_y);
@@ -488,15 +485,11 @@ st_scroll_bar_scroll_event (ClutterActor       *actor,
           st_adjustment_adjust_for_scroll_event (priv->adjustment, delta_x);
       }
       break;
-    case CLUTTER_SCROLL_LEFT:
-    case CLUTTER_SCROLL_RIGHT:
-      if (direction == CLUTTER_TEXT_DIRECTION_RTL)
-          scroll_dir = scroll_dir == CLUTTER_SCROLL_LEFT ? CLUTTER_SCROLL_RIGHT
-                                                         : CLUTTER_SCROLL_LEFT;
-    /* Fall through */
     case CLUTTER_SCROLL_UP:
     case CLUTTER_SCROLL_DOWN:
-      adjust_with_direction (priv->adjustment, scroll_dir);
+    case CLUTTER_SCROLL_LEFT:
+    case CLUTTER_SCROLL_RIGHT:
+      adjust_with_direction (priv->adjustment, event->direction);
       break;
     default:
       g_return_val_if_reached (FALSE);
@@ -526,21 +519,11 @@ st_scroll_bar_class_init (StScrollBarClass *klass)
 
   widget_class->style_changed = st_scroll_bar_style_changed;
 
-  /**
-   * StScrollBar:adjustment:
-   *
-   * The #StAdjustment controlling the #StScrollBar.
-   */
   props[PROP_ADJUSTMENT] =
     g_param_spec_object ("adjustment", "Adjustment", "The adjustment",
                          ST_TYPE_ADJUSTMENT,
                          ST_PARAM_READWRITE);
 
-  /**
-   * StScrollBar:vertical:
-   *
-   * Whether the #StScrollBar is vertical. If %FALSE it is horizontal.
-   */
   props[PROP_VERTICAL] =
     g_param_spec_boolean ("vertical",
                           "Vertical Orientation",
@@ -550,13 +533,6 @@ st_scroll_bar_class_init (StScrollBarClass *klass)
 
   g_object_class_install_properties (object_class, N_PROPS, props);
 
-
-  /**
-   * StScrollBar::scroll-start:
-   * @bar: a #StScrollBar
-   *
-   * Emitted when the #StScrollBar begins scrolling.
-   */
   signals[SCROLL_START] =
     g_signal_new ("scroll-start",
                   G_TYPE_FROM_CLASS (klass),
@@ -565,12 +541,6 @@ st_scroll_bar_class_init (StScrollBarClass *klass)
                   NULL, NULL, NULL,
                   G_TYPE_NONE, 0);
 
-  /**
-   * StScrollBar::scroll-stop:
-   * @bar: a #StScrollBar
-   *
-   * Emitted when the #StScrollBar finishes scrolling.
-   */
   signals[SCROLL_STOP] =
     g_signal_new ("scroll-stop",
                   G_TYPE_FROM_CLASS (klass),
@@ -586,7 +556,6 @@ move_slider (StScrollBar *bar,
              gfloat       y)
 {
   StScrollBarPrivate *priv = st_scroll_bar_get_instance_private (bar);
-  ClutterTextDirection direction;
   gdouble position, lower, upper, page_size;
   gfloat ux, uy, pos, size;
 
@@ -619,10 +588,6 @@ move_slider (StScrollBar *bar,
                             NULL,
                             NULL,
                             &page_size);
-
-  direction = clutter_actor_get_text_direction (CLUTTER_ACTOR (bar));
-  if (!priv->vertical && direction == CLUTTER_TEXT_DIRECTION_RTL)
-    pos = size - pos;
 
   position = ((pos / size)
               * (upper - lower - page_size))
@@ -707,7 +672,6 @@ static gboolean
 trough_paging_cb (StScrollBar *self)
 {
   StScrollBarPrivate *priv = st_scroll_bar_get_instance_private (self);
-  ClutterTextDirection direction;
   g_autoptr (ClutterTransition) transition = NULL;
   StSettings *settings;
   gfloat handle_pos, event_pos, tx, ty;
@@ -764,10 +728,6 @@ trough_paging_cb (StScrollBar *self)
                                        priv->move_x,
                                        priv->move_y,
                                        &tx, &ty);
-
-  direction = clutter_actor_get_text_direction (CLUTTER_ACTOR (self));
-  if (!priv->vertical && direction == CLUTTER_TEXT_DIRECTION_RTL)
-    page_increment *= -1;
 
   if (priv->vertical)
     event_pos = ty;
@@ -993,9 +953,10 @@ st_scroll_bar_set_adjustment (StScrollBar  *bar,
  * st_scroll_bar_get_adjustment:
  * @bar: a #StScrollbar
  *
- * Gets the #StAdjustment that controls the current position of @bar.
+ * Gets the adjustment object that stores the current position
+ * of the scrollbar.
  *
- * Returns: (transfer none): an #StAdjustment
+ * Return value: (transfer none): the adjustment
  */
 StAdjustment *
 st_scroll_bar_get_adjustment (StScrollBar *bar)

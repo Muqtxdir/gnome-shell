@@ -19,6 +19,7 @@ var AUTORUN_EXPIRE_TIMEOUT_SECS = 10;
 var AutomountManager = class {
     constructor() {
         this._settings = new Gio.Settings({ schema_id: SETTINGS_SCHEMA });
+        this._volumeQueue = [];
         this._activeOperations = new Map();
         this._session = new GnomeSession.SessionManager();
         this._session.connectSignal('InhibitorAdded',
@@ -175,7 +176,7 @@ var AutomountManager = class {
         if (allowAutorun)
             this._allowAutorun(volume);
 
-        const mountOp = operation?.mountOp ?? null;
+        let mountOp = operation ? operation.mountOp : null;
         this._activeOperations.set(volume, operation);
 
         volume.mount(0, mountOp, null,
@@ -200,6 +201,7 @@ var AutomountManager = class {
                 e.message.includes('Failed to activate device: Incorrect passphrase') ||
                 // cryptsetup returns EINVAL in many cases, including wrong TCRYPT password/parameters
                 e.message.includes('Failed to load device\'s parameters: Invalid argument')) {
+
                 this._reaskPassword(volume);
             } else {
                 if (e.message.includes('Compiled against a version of libcryptsetup that does not support the VeraCrypt PIM setting')) {
@@ -219,11 +221,13 @@ var AutomountManager = class {
             GLib.source_remove(volume._allowAutorunExpireId);
             delete volume._allowAutorunExpireId;
         }
+        this._volumeQueue =
+            this._volumeQueue.filter(element => element != volume);
     }
 
     _reaskPassword(volume) {
         let prevOperation = this._activeOperations.get(volume);
-        const existingDialog = prevOperation?.borrowDialog();
+        let existingDialog = prevOperation ? prevOperation.borrowDialog() : null;
         let operation =
             new ShellMountOperation.ShellMountOperation(volume,
                                                         { existingDialog });

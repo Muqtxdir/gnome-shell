@@ -70,8 +70,7 @@ let WINDOW_CONFIGS = [
     { width: 640, height: 480, alpha: true,  maximized: false, count: 10, metric: 'overviewFps10Alpha' },
 ];
 
-async function run() {
-    /* eslint-disable no-await-in-loop */
+function *run() {
     Scripting.defineScriptEvent("overviewShowStart", "Starting to show the overview");
     Scripting.defineScriptEvent("overviewShowDone", "Overview finished showing");
     Scripting.defineScriptEvent("afterShowHide", "After a show/hide cycle for the overview");
@@ -85,7 +84,7 @@ async function run() {
         Scripting.scriptEvent('overviewShowDone');
     });
 
-    await Scripting.sleep(1000);
+    yield Scripting.sleep(1000);
 
     for (let i = 0; i < 2 * WINDOW_CONFIGS.length; i++) {
         // We go to the overview twice for each configuration; the first time
@@ -93,50 +92,49 @@ async function run() {
         // a clean set of numbers.
         if ((i % 2) == 0) {
             let config = WINDOW_CONFIGS[i / 2];
-            await Scripting.destroyTestWindows();
+            yield Scripting.destroyTestWindows();
 
             for (let k = 0; k < config.count; k++) {
-                await Scripting.createTestWindow({ width: config.width,
+                yield Scripting.createTestWindow({ width: config.width,
                                                    height: config.height,
                                                    alpha: config.alpha,
                                                    maximized: config.maximized });
             }
 
-            await Scripting.waitTestWindows();
-            await Scripting.sleep(1000);
-            await Scripting.waitLeisure();
+            yield Scripting.waitTestWindows();
+            yield Scripting.sleep(1000);
+            yield Scripting.waitLeisure();
         }
 
         Scripting.scriptEvent('overviewShowStart');
         Main.overview.show();
 
-        await Scripting.waitLeisure();
+        yield Scripting.waitLeisure();
         Main.overview.hide();
-        await Scripting.waitLeisure();
+        yield Scripting.waitLeisure();
 
         System.gc();
-        await Scripting.sleep(1000);
+        yield Scripting.sleep(1000);
         Scripting.collectStatistics();
         Scripting.scriptEvent('afterShowHide');
     }
 
-    await Scripting.destroyTestWindows();
-    await Scripting.sleep(1000);
+    yield Scripting.destroyTestWindows();
+    yield Scripting.sleep(1000);
 
     Main.overview.show();
-    await Scripting.waitLeisure();
+    yield Scripting.waitLeisure();
 
     for (let i = 0; i < 2; i++) {
         Scripting.scriptEvent('applicationsShowStart');
         // eslint-disable-next-line require-atomic-updates
         Main.overview.dash.showAppsButton.checked = true;
-        await Scripting.waitLeisure();
+        yield Scripting.waitLeisure();
         Scripting.scriptEvent('applicationsShowDone');
         // eslint-disable-next-line require-atomic-updates
         Main.overview.dash.showAppsButton.checked = false;
-        await Scripting.waitLeisure();
+        yield Scripting.waitLeisure();
     }
-    /* eslint-enable no-await-in-loop */
 }
 
 let showingOverview = false;

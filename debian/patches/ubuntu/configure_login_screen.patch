@@ -9,18 +9,10 @@ gsettings keys.
 Forwarded: https://gitlab.gnome.org/GNOME/gnome-shell/-/issues/680
 Bug: https://bugs.launchpad.net/ubuntu/+source/gnome-shell/+bug/1918613
 Origin: ubuntu
----
- data/com.ubuntu.login-screen.gschema.xml.in | 70 +++++++++++++++++++++++++++++
- data/meson.build                            |  8 +++-
- js/ui/screenShield.js                       | 37 +++++++++++++++
- 3 files changed, 114 insertions(+), 1 deletion(-)
- create mode 100644 data/com.ubuntu.login-screen.gschema.xml.in
-
-diff --git a/data/com.ubuntu.login-screen.gschema.xml.in b/data/com.ubuntu.login-screen.gschema.xml.in
-new file mode 100644
-index 0000000..ee8b3a2
+Index: gnome-shell/data/com.ubuntu.login-screen.gschema.xml.in
+===================================================================
 --- /dev/null
-+++ b/data/com.ubuntu.login-screen.gschema.xml.in
++++ gnome-shell/data/com.ubuntu.login-screen.gschema.xml.in
 @@ -0,0 +1,70 @@
 +<?xml version="1.0" encoding="UTF-8"?>
 +<schemalist gettext-domain="@GETTEXT_PACKAGE@">
@@ -92,11 +84,11 @@ index 0000000..ee8b3a2
 +    </key>
 +  </schema>
 +</schemalist>
-diff --git a/data/meson.build b/data/meson.build
-index 4a1e16d..771bba1 100644
---- a/data/meson.build
-+++ b/data/meson.build
-@@ -86,6 +86,12 @@ schema = configure_file(
+Index: gnome-shell/data/meson.build
+===================================================================
+--- gnome-shell.orig/data/meson.build
++++ gnome-shell/data/meson.build
+@@ -85,6 +85,12 @@ schema = configure_file(
    configuration: schemaconf,
    install_dir: schemadir
  )
@@ -118,65 +110,61 @@ index 4a1e16d..771bba1 100644
    output: 'gschemas.compiled',
    command: [find_program('glib-compile-schemas'), meson.current_build_dir()],
    build_by_default: true)
-diff --git a/js/ui/screenShield.js b/js/ui/screenShield.js
-index 4156ede..935bdc9 100644
---- a/js/ui/screenShield.js
-+++ b/js/ui/screenShield.js
-@@ -26,6 +26,12 @@ const DISABLE_LOCK_KEY = 'disable-lock-screen';
+Index: gnome-shell/js/ui/screenShield.js
+===================================================================
+--- gnome-shell.orig/js/ui/screenShield.js
++++ gnome-shell/js/ui/screenShield.js
+@@ -26,6 +26,12 @@ const DISABLE_LOCK_KEY = 'disable-lock-s
  
  const LOCKED_STATE_STR = 'screenShield.locked';
  
-+const LOGIN_SCREEN_SCHEMA = 'com.ubuntu.login-screen';
-+const LOGIN_SCREEN_BACKGROUND_COLOR_KEY = 'background-color';
-+const LOGIN_SCREEN_BACKGROUND_PICTURE_URI_KEY = 'background-picture-uri';
-+const LOGIN_SCREEN_BACKGROUND_REPEAT_KEY = 'background-repeat';
-+const LOGIN_SCREEN_BACKGROUND_SIZE_KEY = 'background-size';
++const LOGINSCREEN_SCHEMA = 'com.ubuntu.login-screen';
++const LOGINSCREEN_BACKGROUND_COLOR_KEY = 'background-color';
++const LOGINSCREEN_BACKGROUND_PICTURE_URI_KEY = 'background-picture-uri';
++const LOGINSCREEN_BACKGROUND_REPEAT_KEY = 'background-repeat';
++const LOGINSCREEN_BACKGROUND_SIZE_KEY = 'background-size';
 +
  // ScreenShield animation time
  // - STANDARD_FADE_TIME is used when the session goes idle
  // - MANUAL_FADE_TIME is used for lowering the shield when asked by the user,
-@@ -119,6 +125,16 @@ var ScreenShield = class {
+@@ -119,6 +125,13 @@ var ScreenShield = class {
          this._lockSettings = new Gio.Settings({ schema_id: LOCKDOWN_SCHEMA });
          this._lockSettings.connect('changed::%s'.format(DISABLE_LOCK_KEY), this._syncInhibitor.bind(this));
  
-+        this._loginScreenSettings = new Gio.Settings({ schema_id: LOGIN_SCREEN_SCHEMA });
-+        [
-+            LOGIN_SCREEN_BACKGROUND_COLOR_KEY,
-+            LOGIN_SCREEN_BACKGROUND_PICTURE_URI_KEY,
-+            LOGIN_SCREEN_BACKGROUND_REPEAT_KEY,
-+            LOGIN_SCREEN_BACKGROUND_SIZE_KEY,
-+        ].forEach(schema => this._loginScreenSettings.connect(
-+            'changed::%s'.format(schema), () => this._refreshBackground()));
-+        this._refreshBackground();
++        this._loginscreenSettings = new Gio.Settings({ schema_id: LOGINSCREEN_SCHEMA });
++        this._loginscreenSettings.connect('changed::%s'.format(LOGINSCREEN_BACKGROUND_COLOR_KEY), this._refreshBackground.bind(this));
++        this._loginscreenSettings.connect('changed::%s'.format(LOGINSCREEN_BACKGROUND_PICTURE_URI_KEY), this._refreshBackground.bind(this));
++        this._loginscreenSettings.connect('changed::%s'.format(LOGINSCREEN_BACKGROUND_REPEAT_KEY), this._refreshBackground.bind(this));
++        this._loginscreenSettings.connect('changed::%s'.format(LOGINSCREEN_BACKGROUND_SIZE_KEY), this._refreshBackground.bind(this));
++        this._refreshBackground()
 +
          this._isModal = false;
          this._isGreeter = false;
          this._isActive = false;
-@@ -205,6 +221,27 @@ var ScreenShield = class {
+@@ -196,6 +209,26 @@ var ScreenShield = class {
          return this._isModal;
      }
  
 +    _refreshBackground() {
-+        const inlineStyle = [];
++        let inline_style = [];
 +
-+        const getSetting = s => this._loginScreenSettings.get_string(s);
-+        const backgroundColor = getSetting(LOGIN_SCREEN_BACKGROUND_COLOR_KEY);
-+        const backgroundPictureUri = getSetting(LOGIN_SCREEN_BACKGROUND_PICTURE_URI_KEY);
-+        const backgroundRepeat = getSetting(LOGIN_SCREEN_BACKGROUND_REPEAT_KEY);
-+        const backgroundSize = getSetting(LOGIN_SCREEN_BACKGROUND_SIZE_KEY);
++        let backgroundColor = this._loginscreenSettings.get_string(LOGINSCREEN_BACKGROUND_COLOR_KEY);
++        let backgroundPictureUri = this._loginscreenSettings.get_string(LOGINSCREEN_BACKGROUND_PICTURE_URI_KEY);
++        let backgroundRepeat = this._loginscreenSettings.get_string(LOGINSCREEN_BACKGROUND_REPEAT_KEY);
++        let backgroundSize = this._loginscreenSettings.get_string(LOGINSCREEN_BACKGROUND_SIZE_KEY);
 +
-+        if (backgroundColor)
-+            inlineStyle.push('background-color: %s'.format(backgroundColor));
-+        if (backgroundPictureUri)
-+            inlineStyle.push('background-image: url("%s")'.format(backgroundPictureUri));
-+        if (backgroundRepeat !== 'default')
-+            inlineStyle.push('background-repeat: %s'.format(backgroundRepeat));
-+        if (backgroundSize !== 'default')
-+            inlineStyle.push('background-size: %s'.format(backgroundSize));
++        if (backgroundColor != "")
++            inline_style.push("background-color: " + backgroundColor);
++        if (backgroundPictureUri != "")
++            inline_style.push("background-image: url(" + backgroundPictureUri + ")");
++        if (backgroundRepeat != "default")
++            inline_style.push("background-repeat: " + backgroundRepeat);
++        if (backgroundSize != "default")
++            inline_style.push("background-size: " + backgroundSize);
 +
-+        this._lockDialogGroup.set_style(inlineStyle.join('; '));
++        this._lockDialogGroup.set_style(inline_style.join('; '));
 +    }
 +
      _syncInhibitor() {
-         const lockEnabled = this._settings.get_boolean(LOCK_ENABLED_KEY) ||
-                             this._settings.get_boolean(SUSPEND_LOCK_ENABLED_KEY);
+         let lockEnabled = this._settings.get_boolean(LOCK_ENABLED_KEY) ||
+                           this._settings.get_boolean(SUSPEND_LOCK_ENABLED_KEY);

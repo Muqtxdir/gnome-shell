@@ -208,7 +208,7 @@ var PopupBaseMenuItem = GObject.registerClass({
                 // Remove the CSS active state if the user press the button and
                 // while holding moves to another menu item, so we don't paint all items.
                 // The correct behaviour would be to set the new item with the CSS
-                // active state as well, but button-press-event is not triggered,
+                // active state as well, but button-press-event is not trigered,
                 // so we should track it in our own, which would involve some work
                 // in the container
                 this.remove_style_pseudo_class('active');
@@ -226,7 +226,7 @@ var PopupBaseMenuItem = GObject.registerClass({
     }
 
     getSensitive() {
-        const parentSensitive = this._parent?.sensitive ?? true;
+        let parentSensitive = this._parent ? this._parent.sensitive : true;
         return this._activatable && this._sensitive && parentSensitive;
     }
 
@@ -324,6 +324,7 @@ var Switch = GObject.registerClass({
         super._init({
             style_class: 'toggle-switch',
             accessible_role: Atk.Role.CHECK_BOX,
+            can_focus: true,
             state,
         });
     }
@@ -503,7 +504,7 @@ var PopupMenuBase = class {
     }
 
     getSensitive() {
-        const parentSensitive = this._parent?.sensitive ?? true;
+        let parentSensitive = this._parent ? this._parent.sensitive : true;
         return this._sensitive && parentSensitive;
     }
 

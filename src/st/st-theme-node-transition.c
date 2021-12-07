@@ -84,11 +84,10 @@ on_timeline_new_frame (ClutterTimeline       *timeline,
 }
 
 StThemeNodeTransition *
-st_theme_node_transition_new (ClutterActor          *actor,
-                              StThemeNode           *from_node,
-                              StThemeNode           *to_node,
+st_theme_node_transition_new (StThemeNode *from_node,
+                              StThemeNode *to_node,
                               StThemeNodePaintState *old_paint_state,
-                              unsigned int           duration)
+                              guint        duration)
 {
   StThemeNodeTransition *transition;
   g_return_val_if_fail (ST_IS_THEME_NODE (from_node), NULL);
@@ -104,7 +103,7 @@ st_theme_node_transition_new (ClutterActor          *actor,
   st_theme_node_paint_state_copy (&transition->priv->old_paint_state,
                                   old_paint_state);
 
-  transition->priv->timeline = clutter_timeline_new_for_actor (actor, duration);
+  transition->priv->timeline = clutter_timeline_new (duration);
 
   transition->priv->timeline_completed_id =
     g_signal_connect (transition->priv->timeline, "completed",
@@ -274,21 +273,21 @@ setup_framebuffers (StThemeNodeTransition *transition,
   if (priv->new_texture == NULL)
     return FALSE;
 
-  g_clear_object (&priv->old_offscreen);
+  cogl_clear_object (&priv->old_offscreen);
   priv->old_offscreen = COGL_FRAMEBUFFER (cogl_offscreen_new_with_texture (priv->old_texture));
   if (!cogl_framebuffer_allocate (priv->old_offscreen, &catch_error))
     {
       g_error_free (catch_error);
-      g_clear_object (&priv->old_offscreen);
+      cogl_clear_object (&priv->old_offscreen);
       return FALSE;
     }
 
-  g_clear_object (&priv->new_offscreen);
+  cogl_clear_object (&priv->new_offscreen);
   priv->new_offscreen = COGL_FRAMEBUFFER (cogl_offscreen_new_with_texture (priv->new_texture));
   if (!cogl_framebuffer_allocate (priv->new_offscreen, &catch_error))
     {
       g_error_free (catch_error);
-      g_clear_object (&priv->new_offscreen);
+      cogl_clear_object (&priv->new_offscreen);
       return FALSE;
     }
 
@@ -404,8 +403,8 @@ st_theme_node_transition_dispose (GObject *object)
   cogl_clear_object (&priv->old_texture);
   cogl_clear_object (&priv->new_texture);
 
-  g_clear_object (&priv->old_offscreen);
-  g_clear_object (&priv->new_offscreen);
+  cogl_clear_object (&priv->old_offscreen);
+  cogl_clear_object (&priv->new_offscreen);
 
   cogl_clear_object (&priv->material);
 

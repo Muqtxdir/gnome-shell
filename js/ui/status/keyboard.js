@@ -199,36 +199,36 @@ var InputSourceSystemSettings = class extends InputSourceSettings {
                                          this._reload.bind(this));
     }
 
-    async _reload() {
-        let props;
-        try {
-            const result = await Gio.DBus.system.call(
-                this._BUS_NAME,
-                this._BUS_PATH,
-                this._BUS_PROPS_IFACE,
-                'GetAll',
-                new GLib.Variant('(s)', [this._BUS_IFACE]),
-                null, Gio.DBusCallFlags.NONE, -1, null);
-            [props] = result.deep_unpack();
-        } catch (e) {
-            log('Could not get properties from %s'.format(this._BUS_NAME));
-            return;
-        }
+    _reload() {
+        Gio.DBus.system.call(this._BUS_NAME,
+                             this._BUS_PATH,
+                             this._BUS_PROPS_IFACE,
+                             'GetAll',
+                             new GLib.Variant('(s)', [this._BUS_IFACE]),
+                             null, Gio.DBusCallFlags.NONE, -1, null,
+                             (conn, result) => {
+                                 let props;
+                                 try {
+                                     props = conn.call_finish(result).deep_unpack()[0];
+                                 } catch (e) {
+                                     log('Could not get properties from %s'.format(this._BUS_NAME));
+                                     return;
+                                 }
+                                 let layouts = props['X11Layout'].unpack();
+                                 let variants = props['X11Variant'].unpack();
+                                 let options = props['X11Options'].unpack();
 
-        const layouts = props['X11Layout'].unpack();
-        const variants = props['X11Variant'].unpack();
-        const options = props['X11Options'].unpack();
-
-        if (layouts !== this._layouts ||
-            variants !== this._variants) {
-            this._layouts = layouts;
-            this._variants = variants;
-            this._emitInputSourcesChanged();
-        }
-        if (options !== this._options) {
-            this._options = options;
-            this._emitKeyboardOptionsChanged();
-        }
+                                 if (layouts != this._layouts ||
+                                     variants != this._variants) {
+                                     this._layouts = layouts;
+                                     this._variants = variants;
+                                     this._emitInputSourcesChanged();
+                                 }
+                                 if (options != this._options) {
+                                     this._options = options;
+                                     this._emitKeyboardOptionsChanged();
+                                 }
+                             });
     }
 
     get inputSources() {
@@ -772,10 +772,6 @@ var InputSourceManager = class {
     get inputSources() {
         return this._inputSources;
     }
-
-    get keyboardManager() {
-        return this._keyboardManager;
-    }
 };
 Signals.addSignalMethods(InputSourceManager.prototype);
 
@@ -789,6 +785,7 @@ function getInputSourceManager() {
 
 var InputSourceIndicatorContainer = GObject.registerClass(
 class InputSourceIndicatorContainer extends St.Widget {
+
     vfunc_get_preferred_width(forHeight) {
         // Here, and in vfunc_get_preferred_height, we need to query
         // for the height of all children, but we ignore the results
@@ -808,8 +805,8 @@ class InputSourceIndicatorContainer extends St.Widget {
         }, [0, 0]);
     }
 
-    vfunc_allocate(box) {
-        this.set_allocation(box);
+    vfunc_allocate(box, flags) {
+        this.set_allocation(box, flags);
 
         // translate box to (0, 0)
         box.x2 -= box.x1;
@@ -818,7 +815,7 @@ class InputSourceIndicatorContainer extends St.Widget {
         box.y1 = 0;
 
         this.get_children().forEach(c => {
-            c.allocate_align_fill(box, 0.5, 0.5, false, false);
+            c.allocate_align_fill(box, 0.5, 0.5, false, false, flags);
         });
     }
 });
@@ -833,8 +830,13 @@ class InputSourceIndicator extends PanelMenu.Button {
         this._menuItems = {};
         this._indicatorLabels = {};
 
-        this._container = new InputSourceIndicatorContainer({ style_class: 'system-status-icon' });
-        this.add_child(this._container);
+        this._container = new InputSourceIndicatorContainer();
+
+        this._hbox = new St.BoxLayout({ style_class: 'panel-status-menu-box' });
+        this._hbox.add_child(this._container);
+        this._hbox.add_child(PopupMenu.arrowIcon(St.Side.BOTTOM));
+
+        this.add_child(this._hbox);
 
         this._propSeparator = new PopupMenu.PopupSeparatorMenuItem();
         this.menu.addMenuItem(this._propSeparator);
@@ -1062,14 +1064,6 @@ class InputSourceIndicator extends PanelMenu.Button {
             if (engineDesc) {
                 xkbLayout = engineDesc.get_layout();
                 xkbVariant = engineDesc.get_layout_variant();
-            }
-
-            // The `default` layout from ibus engine means to
-            // use the current keyboard layout.
-            if (xkbLayout === 'default') {
-                const current = this._inputSourceManager.keyboardManager.currentLayout;
-                xkbLayout = current.layout;
-                xkbVariant = current.variant;
             }
         }
 

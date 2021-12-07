@@ -59,8 +59,8 @@ class ButtonBox extends St.Widget {
         return [0, 0];
     }
 
-    vfunc_allocate(box) {
-        this.set_allocation(box);
+    vfunc_allocate(box, flags) {
+        this.set_allocation(box, flags);
 
         let child = this.get_first_child();
         if (!child)
@@ -83,7 +83,7 @@ class ButtonBox extends St.Widget {
         childBox.y1 = 0;
         childBox.y2 = availHeight;
 
-        child.allocate(childBox);
+        child.allocate(childBox, flags);
     }
 
     _onDestroy() {
@@ -96,13 +96,11 @@ var Button = GObject.registerClass({
     Signals: { 'menu-set': {} },
 }, class PanelMenuButton extends ButtonBox {
     _init(menuAlignment, nameText, dontCreateMenu) {
-        super._init({
-            reactive: true,
-            can_focus: true,
-            track_hover: true,
-            accessible_name: nameText ?? '',
-            accessible_role: Atk.Role.MENU,
-        });
+        super._init({ reactive: true,
+                      can_focus: true,
+                      track_hover: true,
+                      accessible_name: nameText ? nameText : "",
+                      accessible_role: Atk.Role.MENU });
 
         if (dontCreateMenu)
             this.menu = new PopupMenu.PopupDummyMenu(this);

@@ -1,12 +1,11 @@
 gnome.compile_resources(
   app_id + '.data',
-  base_id + '.data.gresource.xml',
+  app_id + '.data.gresource.xml',
   gresource_bundle: true,
   install: true,
   install_dir: pkgdatadir
 )
 
-desktop_file = app_id + '.desktop'
 desktopconf = configuration_data()
 # We substitute in bindir so it works as an autostart
 # file when built in a non-system prefix
@@ -16,27 +15,19 @@ desktopconf.set('prgname', prgname)
 
 i18n.merge_file('desktop',
   input: configure_file(
-    input: base_id + '.desktop.in.in',
-    output: desktop_file + '.in',
+    input: app_id + '.desktop.in.in',
+    output: app_id + '.desktop.in',
     configuration: desktopconf
   ),
-  output: desktop_file,
+  output: app_id + '.desktop',
   po_dir: po_dir,
   install: true,
   install_dir: desktopdir,
   type: 'desktop'
 )
 
-if (desktop_file_validate.found())
-  test('Validating ' + desktop_file,
-    desktop_file_validate,
-    args: [desktop_file],
-    workdir: meson.current_build_dir()
-  )
-endif
-
 configure_file(
-  input: base_id + '.service.in',
+  input: app_id + '.service.in',
   output: app_id + '.service',
   configuration: desktopconf,
   install_dir: servicedir,

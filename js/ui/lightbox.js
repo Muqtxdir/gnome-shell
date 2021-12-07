@@ -27,11 +27,13 @@ var RadialShaderEffect = GObject.registerClass({
         'brightness': GObject.ParamSpec.float(
             'brightness', 'brightness', 'brightness',
             GObject.ParamFlags.READWRITE,
-            0, 1, 1),
+            0, 1, 1
+        ),
         'sharpness': GObject.ParamSpec.float(
             'sharpness', 'sharpness', 'sharpness',
             GObject.ParamFlags.READWRITE,
-            0, 1, 0),
+            0, 1, 0
+        ),
     },
 }, class RadialShaderEffect extends Shell.GLSLEffect {
     _init(params) {
@@ -57,11 +59,11 @@ var RadialShaderEffect = GObject.registerClass({
     }
 
     set brightness(v) {
-        if (this._brightness === v)
+        if (this._brightness == v)
             return;
         this._brightness = v;
         this.set_uniform_float(this._brightnessLocation,
-            1, [this._brightness]);
+                               1, [this._brightness]);
         this.notify('brightness');
     }
 
@@ -70,11 +72,11 @@ var RadialShaderEffect = GObject.registerClass({
     }
 
     set sharpness(v) {
-        if (this._sharpness === v)
+        if (this._sharpness == v)
             return;
         this._sharpness = v;
         this.set_uniform_float(this._sharpnessLocation,
-            1, [this._sharpness]);
+                               1, [this._sharpness]);
         this.notify('sharpness');
     }
 });

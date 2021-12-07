@@ -1,12 +1,11 @@
 project('gnome-extensions-tool', 'c',
-  version: '40.5',
-  meson_version: '>= 0.53.0',
+  version: '3.36.9',
+  meson_version: '>= 0.47.0',
   license: 'GPLv2+'
 )
 
 gio_req = '>= 2.56.0'
 
-fs = import('fs')
 gnome = import('gnome')
 i18n  = import('i18n')
 
@@ -36,23 +35,18 @@ cc = meson.get_compiler('c')
 
 bash_completion = dependency('bash-completion', required: get_option('bash_completion'))
 
-po_dir = meson.source_root() + '/po'
-
 subdir('src')
 
 if bash_completion.found()
   install_data('completion/bash/gnome-extensions',
-    install_dir: bash_completion.get_pkgconfig_variable('completionsdir', define_variable: ['datadir', datadir])
+    install_dir: bash_completion.get_pkgconfig_variable('completionsdir')
   )
 endif
 
 if get_option('man')
-  if fs.exists('man/gnome-extensions.1')
-    install_man('man/gnome-extensions.1')
-  else
-    a2x = find_program('a2x')
-    subdir('man')
-  endif
+  a2x = find_program('a2x')
+
+  subdir('man')
 endif
 
 if not meson.is_subproject()
@@ -78,7 +72,9 @@ if not meson.is_subproject()
     'bash_completion': bash_completion.found(),
   }
 
-  summary(summary_dirs, section: 'Directories')
-  summary(summary_build, section: 'Build Configuration')
-  summary(summary_options, section: 'Build Options')
+  if meson.version().version_compare('>= 0.53.0')
+    summary(summary_dirs, section: 'Directories')
+    summary(summary_build, section: 'Build Configuration')
+    summary(summary_options, section: 'Build Options')
+  endif
 endif

@@ -15,10 +15,10 @@ Forwarded: https://gitlab.gnome.org/GNOME/gnome-shell/merge_requests/6
  2 files changed, 9 insertions(+)
 
 diff --git a/src/main.c b/src/main.c
-index dcba9fc..86a930a 100644
+index 585a3d6..b8b486b 100644
 --- a/src/main.c
 +++ b/src/main.c
-@@ -50,6 +50,13 @@ static const GDebugKey SHELL_DEBUG_KEYS[] = {
+@@ -51,6 +51,13 @@ static const GDebugKey SHELL_DEBUG_KEYS[] = {
    { "backtrace-segfaults",   SHELL_DEBUG_BACKTRACE_SEGFAULTS },
    { "backtrace-aborts",      SHELL_DEBUG_BACKTRACE_ABORTS },
    { "backtrace-math-errors", SHELL_DEBUG_BACKTRACE_FPE },
@@ -33,10 +33,10 @@ index dcba9fc..86a930a 100644
  static int _default_debug_flags = SHELL_DEBUG_BACKTRACE_ABORTS |
                                    SHELL_DEBUG_BACKTRACE_FPE;
 diff --git a/src/shell-global.c b/src/shell-global.c
-index 48a9bfa..7e2941a 100644
+index abdfe2c..950e84d 100644
 --- a/src/shell-global.c
 +++ b/src/shell-global.c
-@@ -1929,6 +1929,8 @@ shell_global_get_debug_flags (ShellGlobal *global)
+@@ -1922,6 +1922,8 @@ shell_global_get_debug_flags (ShellGlobal *global)
   *  - 'backtrace-segfaults'
   *  - 'backtrace-aborts'
   *  - 'backtrace-math-errors'

@@ -144,16 +144,16 @@ function loadRemoteSearchProviders(searchSettings, callback) {
     // Special case gnome-control-center to be always active and always first
     sortOrder.unshift('gnome-control-center.desktop');
 
-    const disabled = searchSettings.get_strv('disabled');
-    const enabled = searchSettings.get_strv('enabled');
-
     loadedProviders = loadedProviders.filter(provider => {
         let appId = provider.appInfo.get_id();
 
-        if (provider.defaultEnabled)
+        if (provider.defaultEnabled) {
+            let disabled = searchSettings.get_strv('disabled');
             return !disabled.includes(appId);
-        else
+        } else {
+            let enabled = searchSettings.get_strv('enabled');
             return enabled.includes(appId);
+        }
     });
 
     loadedProviders.sort((providerA, providerB) => {
@@ -206,7 +206,7 @@ var RemoteSearchProvider = class {
                                          g_interface_info: proxyInfo,
                                          g_interface_name: proxyInfo.name,
                                          gFlags });
-        this.proxy.init_async(GLib.PRIORITY_DEFAULT, null);
+        this.proxy.init_async(GLib.PRIORITY_DEFAULT, null, null);
 
         this.appInfo = appInfo;
         this.id = appInfo.get_id();

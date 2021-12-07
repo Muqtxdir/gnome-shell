@@ -3,9 +3,9 @@ const { Gio, GLib, Meta, Shell, St } = imports.gi;
 
 const INTROSPECT_SCHEMA = 'org.gnome.shell';
 const INTROSPECT_KEY = 'introspect';
-const APP_ALLOWLIST = ['org.freedesktop.impl.portal.desktop.gtk'];
+const APP_WHITELIST = ['org.freedesktop.impl.portal.desktop.gtk'];
 
-const INTROSPECT_DBUS_API_VERSION = 3;
+const INTROSPECT_DBUS_API_VERSION = 2;
 
 const { loadInterfaceXML } = imports.misc.fileUtils;
 
@@ -46,24 +46,19 @@ var IntrospectService = class {
 
         this._syncRunningApplications();
 
-        this._allowlistMap = new Map();
-        APP_ALLOWLIST.forEach(appName => {
+        this._whitelistMap = new Map();
+        APP_WHITELIST.forEach(appName => {
             Gio.DBus.watch_name(Gio.BusType.SESSION,
                 appName,
                 Gio.BusNameWatcherFlags.NONE,
-                (conn, name, owner) => this._allowlistMap.set(name, owner),
-                (conn, name) => this._allowlistMap.delete(name));
+                (conn, name, owner) => this._whitelistMap.set(name, owner),
+                (conn, name) => this._whitelistMap.delete(name));
         });
 
         this._settings = St.Settings.get();
         this._settings.connect('notify::enable-animations',
             this._syncAnimationsEnabled.bind(this));
         this._syncAnimationsEnabled();
-
-        const monitorManager = Meta.MonitorManager.get();
-        monitorManager.connect('monitors-changed',
-            this._syncScreenSize.bind(this));
-        this._syncScreenSize();
     }
 
     _isStandaloneApp(app) {
@@ -74,8 +69,8 @@ var IntrospectService = class {
         return this._introspectSettings.get_boolean(INTROSPECT_KEY);
     }
 
-    _isSenderAllowed(sender) {
-        return [...this._allowlistMap.values()].includes(sender);
+    _isSenderWhitelisted(sender) {
+        return [...this._whitelistMap.values()].includes(sender);
     }
 
     _getSandboxedAppId(app) {
@@ -138,7 +133,7 @@ var IntrospectService = class {
         if (this._isIntrospectEnabled())
             return true;
 
-        if (this._isSenderAllowed(invocation.get_sender()))
+        if (this._isSenderWhitelisted(invocation.get_sender()))
             return true;
 
         return false;
@@ -170,6 +165,7 @@ var IntrospectService = class {
         for (let app of apps) {
             let windows = app.get_windows();
             for (let window of windows) {
+
                 if (!this._isEligibleWindow(window))
                     continue;
 
@@ -213,26 +209,8 @@ var IntrospectService = class {
         }
     }
 
-    _syncScreenSize() {
-        const oldScreenWidth = this._screenWidth;
-        const oldScreenHeight = this._screenHeight;
-        this._screenWidth = global.screen_width;
-        this._screenHeight = global.screen_height;
-
-        if (oldScreenWidth !== this._screenWidth ||
-            oldScreenHeight !== this._screenHeight) {
-            const variant = new GLib.Variant('(ii)',
-                [this._screenWidth, this._screenHeight]);
-            this._dbusImpl.emit_property_changed('ScreenSize', variant);
-        }
-    }
-
     get AnimationsEnabled() {
         return this._animationsEnabled;
-    }
-
-    get ScreenSize() {
-        return [this._screenWidth, this._screenHeight];
     }
 
     get version() {

@@ -60,7 +60,7 @@ class Animation extends St.Bin {
     }
 
     _loadFile(file, width, height) {
-        const resourceScale = this.get_resource_scale();
+        let [validResourceScale, resourceScale] = this.get_resource_scale();
         let wasPlaying = this._isPlaying;
 
         if (this._isPlaying)
@@ -68,6 +68,12 @@ class Animation extends St.Bin {
 
         this._isLoaded = false;
         this.destroy_all_children();
+
+        if (!validResourceScale) {
+            if (wasPlaying)
+                this.play();
+            return;
+        }
 
         let textureCache = St.TextureCache.get_default();
         let scaleFactor = St.ThemeContext.get_for_stage(global.stage).scale_factor;

@@ -111,31 +111,17 @@ var ModemBase = GObject.registerClass({
             0, 100, 0),
     },
 }, class ModemBase extends GObject.Object {
-    _init() {
-        super._init();
-        this._operatorName = null;
-        this._signalQuality = 0;
-    }
-
-    get operatorName() {
-        return this._operatorName;
-    }
-
-    get signalQuality() {
-        return this._signalQuality;
-    }
-
     _setOperatorName(operatorName) {
-        if (this._operatorName == operatorName)
+        if (this.operator_name == operatorName)
             return;
-        this._operatorName = operatorName;
+        this.operator_name = operatorName;
         this.notify('operator-name');
     }
 
     _setSignalQuality(signalQuality) {
-        if (this._signalQuality == signalQuality)
+        if (this.signal_quality == signalQuality)
             return;
-        this._signalQuality = signalQuality;
+        this.signal_quality = signalQuality;
         this.notify('signal-quality');
     }
 });

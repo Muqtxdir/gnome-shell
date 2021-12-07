@@ -21,13 +21,16 @@ const { loadInterfaceXML } = imports.misc.fileUtils;
 // When scripting an automated test we want to make a series of calls
 // in a linear fashion, but we also want to be able to let the main
 // loop run so actions can finish. For this reason we write the script
-// as an async function that uses await when it wants to let the main
+// as a generator function that yields when it want to let the main
 // loop run.
 //
-//    await Scripting.sleep(1000);
+//    yield Scripting.sleep(1000);
 //    main.overview.show();
-//    await Scripting.waitLeisure();
+//    yield Scripting.waitLeisure();
 //
+// While it isn't important to the person writing the script, the actual
+// yielded result is a function that the caller uses to provide the
+// callback for resuming the script.
 
 /**
  * sleep:
@@ -282,11 +285,13 @@ function _collect(scriptModule, outputFile) {
 }
 
 async function _runPerfScript(scriptModule, outputFile) {
-    try {
-        await scriptModule.run();
-    } catch (err) {
-        log(`Script failed: ${err}\n${err.stack}`);
-        Meta.exit(Meta.ExitCode.ERROR);
+    for (let step of scriptModule.run()) {
+        try {
+            await step; // eslint-disable-line no-await-in-loop
+        } catch (err) {
+            log(`Script failed: ${err}\n${err.stack}`);
+            Meta.exit(Meta.ExitCode.ERROR);
+        }
     }
 
     try {

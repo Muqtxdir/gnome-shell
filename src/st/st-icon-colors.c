@@ -26,14 +26,14 @@
  *
  * Creates a new #StIconColors. All colors are initialized to transparent black.
  *
- * Returns: a newly created #StIconColors. Free with st_icon_colors_unref()
+ * Return value: a newly created #StIconColors. Free with st_icon_colors_unref()
  */
 StIconColors *
 st_icon_colors_new (void)
 {
   StIconColors *colors;
 
-  colors = g_new0 (StIconColors, 1);
+  colors = g_slice_new0 (StIconColors);
   colors->ref_count = 1;
 
   return colors;
@@ -72,7 +72,7 @@ st_icon_colors_unref (StIconColors *colors)
   g_return_if_fail (colors->ref_count > 0);
 
   if (g_atomic_int_dec_and_test ((volatile int *)&colors->ref_count))
-    g_free (colors);
+    g_slice_free (StIconColors, colors);
 }
 
 /**
@@ -106,8 +106,6 @@ st_icon_colors_copy (StIconColors *colors)
  * st_icon_colors_equal:
  * @colors: a #StIconColors
  * @other: another #StIconColors
- *
- * Check if two #StIconColors objects are identical.
  *
  * Returns: %TRUE if the #StIconColors are equal
  */

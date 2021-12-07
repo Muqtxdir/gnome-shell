@@ -1,6 +1,6 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 /* exported NotificationPolicy, NotificationGenericPolicy,
-   NotificationApplicationPolicy, Source, SourceActor,
+   NotificationApplicationPolicy, Source, SourceActor, SourceActorWithLabel,
    SystemNotificationSource, MessageTray */
 
 const { Clutter, Gio, GLib, GObject, Meta, Shell, St } = imports.gi;
@@ -134,7 +134,6 @@ var FocusGrabber = class FocusGrabber {
 //
 // A notification without a policy object will inherit the default one.
 var NotificationPolicy = GObject.registerClass({
-    GTypeFlags: GObject.TypeFlags.ABSTRACT,
     Properties: {
         'enable': GObject.ParamSpec.boolean(
             'enable', 'enable', 'enable', GObject.ParamFlags.READABLE, true),
@@ -369,6 +368,7 @@ var Notification = GObject.registerClass({
         this.isTransient = false;
         this.privacyScope = PrivacyScope.USER;
         this.forFeedback = false;
+        this._acknowledged = false;
         this.bannerBodyText = null;
         this.bannerBodyMarkup = false;
         this._soundName = null;
@@ -435,6 +435,17 @@ var Notification = GObject.registerClass({
     // @callback: the callback for the action
     addAction(label, callback) {
         this.actions.push({ label, callback });
+    }
+
+    get acknowledged() {
+        return this._acknowledged;
+    }
+
+    set acknowledged(v) {
+        if (this._acknowledged == v)
+            return;
+        this._acknowledged = v;
+        this.notify('acknowledged');
     }
 
     setUrgency(urgency) {
@@ -644,6 +655,77 @@ class SourceActor extends St.Widget {
     }
 });
 
+var SourceActorWithLabel = GObject.registerClass(
+class SourceActorWithLabel extends SourceActor {
+    _init(source, size) {
+        super._init(source, size);
+
+        this._counterLabel = new St.Label({ x_align: Clutter.ActorAlign.CENTER,
+                                            x_expand: true,
+                                            y_align: Clutter.ActorAlign.CENTER,
+                                            y_expand: true });
+
+        this._counterBin = new St.Bin({ style_class: 'summary-source-counter',
+                                        child: this._counterLabel,
+                                        layout_manager: new Clutter.BinLayout() });
+        this._counterBin.hide();
+
+        this._counterBin.connect('style-changed', () => {
+            let themeNode = this._counterBin.get_theme_node();
+            this._counterBin.translation_x = themeNode.get_length('-shell-counter-overlap-x');
+            this._counterBin.translation_y = themeNode.get_length('-shell-counter-overlap-y');
+        });
+
+        this.add_actor(this._counterBin);
+
+        this._countUpdatedId = this._source.connect('notify::count', this._updateCount.bind(this));
+        this._updateCount();
+
+        this.connect('destroy', () => {
+            this._source.disconnect(this._countUpdatedId);
+        });
+    }
+
+    vfunc_allocate(box, flags) {
+        super.vfunc_allocate(box, flags);
+
+        let childBox = new Clutter.ActorBox();
+
+        let [, , naturalWidth, naturalHeight] = this._counterBin.get_preferred_size();
+        let direction = this.get_text_direction();
+
+        if (direction == Clutter.TextDirection.LTR) {
+            // allocate on the right in LTR
+            childBox.x1 = box.x2 - naturalWidth;
+            childBox.x2 = box.x2;
+        } else {
+            // allocate on the left in RTL
+            childBox.x1 = 0;
+            childBox.x2 = naturalWidth;
+        }
+
+        childBox.y1 = box.y2 - naturalHeight;
+        childBox.y2 = box.y2;
+
+        this._counterBin.allocate(childBox, flags);
+    }
+
+    _updateCount() {
+        if (this._actorDestroyed)
+            return;
+
+        this._counterBin.visible = this._source.countVisible;
+
+        let text;
+        if (this._source.count < 100)
+            text = this._source.count.toString();
+        else
+            text = String.fromCharCode(0x22EF); // midline horizontal ellipsis
+
+        this._counterLabel.set_text(text);
+    }
+});
+
 var Source = GObject.registerClass({
     Properties: {
         'count': GObject.ParamSpec.int(
@@ -703,11 +785,11 @@ var Source = GObject.registerClass({
     }
 
     countUpdated() {
-        this.notify('count');
+        super.notify('count');
     }
 
     _createPolicy() {
-        return new NotificationGenericPolicy();
+        return new NotificationPolicy();
     }
 
     get narrowestPrivacyScope() {
@@ -773,6 +855,23 @@ var Source = GObject.registerClass({
 
         if (this.policy.showBanners || notification.urgency == Urgency.CRITICAL)
             this.emit('notification-show', notification);
+        else
+            notification.playSound();
+    }
+
+    notify(propName) {
+        if (propName instanceof Notification) {
+            try {
+                throw new Error('Source.notify() has been moved to Source.showNotification()' +
+                                'this code will break in the future');
+            } catch (e) {
+                logError(e);
+                this.showNotification(propName);
+                return;
+            }
+        }
+
+        super.notify(propName);
     }
 
     destroy(reason) {
@@ -825,6 +924,17 @@ var MessageTray = GObject.registerClass({
         this._bannerBlocked = false;
         this._presence.connectSignal('StatusChanged', (proxy, senderName, [status]) => {
             this._onStatusChanged(status);
+        });
+
+        global.stage.connect('enter-event', (a, ev) => {
+            // HACK: St uses ClutterInputDevice for hover tracking, which
+            // misses relevant X11 events when untracked actors are
+            // involved (read: the notification banner in normal mode),
+            // so fix up Clutter's view of the pointer position in
+            // that case.
+            let related = ev.get_related();
+            if (!related || this.contains(related))
+                global.sync_pointer();
         });
 
         let constraint = new Layout.MonitorConstraint({ primary: true });
@@ -1054,7 +1164,8 @@ var MessageTray = GObject.registerClass({
                                      this._onNotificationDestroy.bind(this));
                 this._notificationQueue.push(notification);
                 this._notificationQueue.sort(
-                    (n1, n2) => n2.urgency - n1.urgency);
+                    (n1, n2) => n2.urgency - n1.urgency
+                );
                 this.emit('queue-changed');
             }
         }

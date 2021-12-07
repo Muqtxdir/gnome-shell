@@ -1,22 +1,27 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 /* exported Overview */
 
-const { Clutter, Gio, GLib, GObject, Meta, Shell, St } = imports.gi;
+const { Clutter, GLib, GObject, Meta, Shell, St } = imports.gi;
 const Signals = imports.signals;
 
 // Time for initial animation going into Overview mode;
 // this is defined here to make it available in imports.
 var ANIMATION_TIME = 250;
 
+const Background = imports.ui.background;
 const DND = imports.ui.dnd;
 const LayoutManager = imports.ui.layout;
+const Lightbox = imports.ui.lightbox;
 const Main = imports.ui.main;
 const MessageTray = imports.ui.messageTray;
 const OverviewControls = imports.ui.overviewControls;
 const Params = imports.misc.params;
-const SwipeTracker = imports.ui.swipeTracker;
-const WindowManager = imports.ui.windowManager;
 const WorkspaceThumbnail = imports.ui.workspaceThumbnail;
+
+// Must be less than ANIMATION_TIME, since we switch to
+// or from the overview completely after ANIMATION_TIME,
+// and don't want the shading animation to get cut off
+var SHADE_ANIMATION_TIME = 200;
 
 var DND_WINDOW_SWITCH_TIMEOUT = 750;
 
@@ -85,20 +90,36 @@ class OverviewActor extends St.BoxLayout {
 
         this.add_constraint(new LayoutManager.MonitorConstraint({ primary: true }));
 
-        this._controls = new OverviewControls.ControlsManager();
+        // Add a clone of the panel to the overview so spacing and such is
+        // automatic
+        let panelGhost = new St.Bin({
+            child: new Clutter.Clone({ source: Main.panel }),
+            reactive: false,
+            opacity: 0,
+        });
+        this.add_actor(panelGhost);
+
+        this._searchEntry = new St.Entry({
+            style_class: 'search-entry',
+            /* Translators: this is the text displayed
+               in the search entry when no search is
+               active; it should not exceed ~30
+               characters. */
+            hint_text: _('Type to search'),
+            track_hover: true,
+            can_focus: true,
+        });
+        this._searchEntry.set_offscreen_redirect(Clutter.OffscreenRedirect.ALWAYS);
+        let searchEntryBin = new St.Bin({
+            child: this._searchEntry,
+            x_align: Clutter.ActorAlign.CENTER,
+        });
+        this.add_actor(searchEntryBin);
+
+        this._controls = new OverviewControls.ControlsManager(this._searchEntry);
+
+        // Add our same-line elements after the search entry
         this.add_child(this._controls);
-    }
-
-    animateToOverview(state, callback) {
-        this._controls.animateToOverview(state, callback);
-    }
-
-    animateFromOverview(callback) {
-        this._controls.animateFromOverview(callback);
-    }
-
-    runStartupAnimation(callback) {
-        this._controls.runStartupAnimation(callback);
     }
 
     get dash() {
@@ -106,11 +127,11 @@ class OverviewActor extends St.BoxLayout {
     }
 
     get searchEntry() {
-        return this._controls.searchEntry;
+        return this._searchEntry;
     }
 
-    get controls() {
-        return this._controls;
+    get viewSelector() {
+        return this._controls.viewSelector;
     }
 });
 
@@ -133,6 +154,10 @@ var Overview = class {
         return this.dash.iconSize;
     }
 
+    get viewSelector() {
+        return this._overview.viewSelector;
+    }
+
     get animationInProgress() {
         return this._animationInProgress;
     }
@@ -145,16 +170,21 @@ var Overview = class {
         return this._visibleTarget;
     }
 
-    get closing() {
-        return this._animationInProgress && !this._visibleTarget;
-    }
-
     _createOverview() {
         if (this._overview)
             return;
 
         if (this.isDummy)
             return;
+
+        // The main Background actors are inside global.window_group which are
+        // hidden when displaying the overview, so we create a new
+        // one. Instances of this class share a single CoglTexture behind the
+        // scenes which allows us to show the background with different
+        // rendering options without duplicating the texture data.
+        this._backgroundGroup = new Meta.BackgroundGroup({ reactive: true });
+        Main.layoutManager.overviewGroup.add_child(this._backgroundGroup);
+        this._bgManagers = [];
 
         this._desktopFade = new St.Widget();
         Main.layoutManager.overviewGroup.add_child(this._desktopFade);
@@ -198,6 +228,48 @@ var Overview = class {
             this.init();
     }
 
+    _updateBackgrounds() {
+        for (let i = 0; i < this._bgManagers.length; i++)
+            this._bgManagers[i].destroy();
+
+        this._bgManagers = [];
+
+        for (let i = 0; i < Main.layoutManager.monitors.length; i++) {
+            let bgManager = new Background.BackgroundManager({ container: this._backgroundGroup,
+                                                               monitorIndex: i,
+                                                               vignette: true });
+            this._bgManagers.push(bgManager);
+        }
+    }
+
+    _unshadeBackgrounds() {
+        let backgrounds = this._backgroundGroup.get_children();
+        for (let i = 0; i < backgrounds.length; i++) {
+            backgrounds[i].ease_property('brightness', 1.0, {
+                duration: SHADE_ANIMATION_TIME,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            });
+            backgrounds[i].ease_property('vignette-sharpness', 0.0, {
+                duration: SHADE_ANIMATION_TIME,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            });
+        }
+    }
+
+    _shadeBackgrounds() {
+        let backgrounds = this._backgroundGroup.get_children();
+        for (let i = 0; i < backgrounds.length; i++) {
+            backgrounds[i].ease_property('brightness', Lightbox.VIGNETTE_BRIGHTNESS, {
+                duration: SHADE_ANIMATION_TIME,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            });
+            backgrounds[i].ease_property('vignette-sharpness', Lightbox.VIGNETTE_SHARPNESS, {
+                duration: SHADE_ANIMATION_TIME,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            });
+        }
+    }
+
     _sessionUpdated() {
         const { hasOverview } = Main.sessionMode;
         if (!hasOverview)
@@ -225,23 +297,14 @@ var Overview = class {
 
         Main.layoutManager.connect('monitors-changed', this._relayout.bind(this));
         this._relayout();
+    }
 
-        Main.wm.addKeybinding(
-            'toggle-overview',
-            new Gio.Settings({ schema_id: WindowManager.SHELL_KEYBINDINGS_SCHEMA }),
-            Meta.KeyBindingFlags.IGNORE_AUTOREPEAT,
-            Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
-            this.toggle.bind(this));
+    addSearchProvider(provider) {
+        this.viewSelector.addSearchProvider(provider);
+    }
 
-        const swipeTracker = new SwipeTracker.SwipeTracker(global.stage,
-            Clutter.Orientation.VERTICAL,
-            Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
-            { allowDrag: false, allowScroll: false });
-        swipeTracker.orientation = Clutter.Orientation.VERTICAL;
-        swipeTracker.connect('begin', this._gestureBegin.bind(this));
-        swipeTracker.connect('update', this._gestureUpdate.bind(this));
-        swipeTracker.connect('end', this._gestureEnd.bind(this));
-        this._swipeTracker = swipeTracker;
+    removeSearchProvider(provider) {
+        this.viewSelector.removeSearchProvider(provider);
     }
 
     //
@@ -329,9 +392,17 @@ var Overview = class {
         return Clutter.EVENT_PROPAGATE;
     }
 
+    addAction(action) {
+        if (this.isDummy)
+            return;
+
+        this._backgroundGroup.add_action(action);
+    }
+
     _getDesktopClone() {
         let windows = global.get_window_actors().filter(
-            w => w.meta_window.get_window_type() === Meta.WindowType.DESKTOP);
+            w => w.meta_window.get_window_type() == Meta.WindowType.DESKTOP
+        );
         if (windows.length == 0)
             return null;
 
@@ -352,6 +423,8 @@ var Overview = class {
 
         this._coverPane.set_position(0, 0);
         this._coverPane.set_size(global.screen_width, global.screen_height);
+
+        this._updateBackgrounds();
     }
 
     _onRestacked() {
@@ -366,59 +439,19 @@ var Overview = class {
         this.emit('windows-restacked', stackIndices);
     }
 
-    _gestureBegin(tracker) {
-        this._overview.controls.gestureBegin(tracker);
-    }
-
-    _gestureUpdate(tracker, progress) {
-        if (!this._shown) {
-            Meta.disable_unredirect_for_display(global.display);
-
-            this._shown = true;
-            this._visible = true;
-            this._visibleTarget = true;
-            this._animationInProgress = true;
-
-            Main.layoutManager.overviewGroup.set_child_above_sibling(
-                this._coverPane, null);
-            this._coverPane.show();
-            this.emit('showing');
-
-            Main.layoutManager.showOverview();
-            this._syncGrab();
-        }
-
-        this._overview.controls.gestureProgress(progress);
-    }
-
-    _gestureEnd(tracker, duration, endProgress) {
-        let onComplete;
-        if (endProgress === 0) {
-            this._shown = false;
-            this._visibleTarget = false;
-            this.emit('hiding');
-            Main.panel.style = 'transition-duration: %dms;'.format(duration);
-            onComplete = () => this._hideDone();
-        } else {
-            onComplete = () => this._showDone();
-        }
-
-        this._overview.controls.gestureEnd(endProgress, duration, onComplete);
-    }
-
-    beginItemDrag(source) {
-        this.emit('item-drag-begin', source);
+    beginItemDrag(_source) {
+        this.emit('item-drag-begin');
         this._inItemDrag = true;
     }
 
-    cancelledItemDrag(source) {
-        this.emit('item-drag-cancelled', source);
+    cancelledItemDrag(_source) {
+        this.emit('item-drag-cancelled');
     }
 
-    endItemDrag(source) {
+    endItemDrag(_source) {
         if (!this._inItemDrag)
             return;
-        this.emit('item-drag-end', source);
+        this.emit('item-drag-end');
         this._inItemDrag = false;
     }
 
@@ -519,10 +552,7 @@ var Overview = class {
     // show:
     //
     // Animates the overview visible and grabs mouse and keyboard input
-    show(state = OverviewControls.ControlsState.WINDOW_PICKER) {
-        if (state === OverviewControls.ControlsState.HIDDEN)
-            throw new Error('Invalid state, use hide() to hide');
-
+    show() {
         if (this.isDummy)
             return;
         if (this._shown)
@@ -533,11 +563,11 @@ var Overview = class {
             return;
 
         Main.layoutManager.showOverview();
-        this._animateVisible(state);
+        this._animateVisible();
     }
 
 
-    _animateVisible(state) {
+    _animateVisible() {
         if (this._visible || this._animationInProgress)
             return;
 
@@ -547,8 +577,16 @@ var Overview = class {
         this._activationTime = GLib.get_monotonic_time() / GLib.USEC_PER_SEC;
 
         Meta.disable_unredirect_for_display(global.display);
+        this.viewSelector.show();
 
-        this._overview.animateToOverview(state, () => this._showDone());
+        this._overview.opacity = 0;
+        this._overview.ease({
+            opacity: 255,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            duration: ANIMATION_TIME,
+            onComplete: () => this._showDone(),
+        });
+        this._shadeBackgrounds();
 
         Main.layoutManager.overviewGroup.set_child_above_sibling(
             this._coverPane, null);
@@ -567,6 +605,7 @@ var Overview = class {
             this._animateNotVisible();
 
         this._syncGrab();
+        global.sync_pointer();
     }
 
     // hide:
@@ -602,7 +641,16 @@ var Overview = class {
         this._animationInProgress = true;
         this._visibleTarget = false;
 
-        this._overview.animateFromOverview(() => this._hideDone());
+        this.viewSelector.animateFromOverview();
+
+        // Make other elements fade out.
+        this._overview.ease({
+            opacity: 0,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            duration: ANIMATION_TIME,
+            onComplete: () => this._hideDone(),
+        });
+        this._unshadeBackgrounds();
 
         Main.layoutManager.overviewGroup.set_child_above_sibling(
             this._coverPane, null);
@@ -614,22 +662,19 @@ var Overview = class {
         // Re-enable unredirection
         Meta.enable_unredirect_for_display(global.display);
 
+        this.viewSelector.hide();
         this._desktopFade.hide();
         this._coverPane.hide();
 
         this._visible = false;
         this._animationInProgress = false;
 
+        this.emit('hidden');
         // Handle any calls to show* while we were hiding
-        if (this._shown) {
-            this.emit('hidden');
-            this._animateVisible(OverviewControls.ControlsState.WINDOW_PICKER);
-        } else {
+        if (this._shown)
+            this._animateVisible();
+        else
             Main.layoutManager.hideOverview();
-            this.emit('hidden');
-        }
-
-        Main.panel.style = null;
 
         this._syncGrab();
     }
@@ -642,42 +687,6 @@ var Overview = class {
             this.hide();
         else
             this.show();
-    }
-
-    showApps() {
-        this.show(OverviewControls.ControlsState.APP_GRID);
-    }
-
-    selectApp(id) {
-        this.showApps();
-        this._overview.controls.appDisplay.selectApp(id);
-    }
-
-    runStartupAnimation(callback) {
-        Main.panel.style = 'transition-duration: 0ms;';
-
-        this._shown = true;
-        this._visible = true;
-        this._visibleTarget = true;
-        Main.layoutManager.showOverview();
-        // We should call this._syncGrab() here, but moved it to happen after
-        // the animation because of a race in the xserver where the grab
-        // fails when requested very early during startup.
-
-        Meta.disable_unredirect_for_display(global.display);
-
-        this.emit('showing');
-
-        this._overview.runStartupAnimation(() => {
-            if (!this._syncGrab()) {
-                callback();
-                return;
-            }
-
-            Main.panel.style = null;
-            this.emit('shown');
-            callback();
-        });
     }
 
     getShowAppsButton() {

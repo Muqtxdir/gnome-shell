@@ -26,11 +26,11 @@ const DISABLE_LOCK_KEY = 'disable-lock-screen';
 
 const LOCKED_STATE_STR = 'screenShield.locked';
 
-const LOGIN_SCREEN_SCHEMA = 'com.ubuntu.login-screen';
-const LOGIN_SCREEN_BACKGROUND_COLOR_KEY = 'background-color';
-const LOGIN_SCREEN_BACKGROUND_PICTURE_URI_KEY = 'background-picture-uri';
-const LOGIN_SCREEN_BACKGROUND_REPEAT_KEY = 'background-repeat';
-const LOGIN_SCREEN_BACKGROUND_SIZE_KEY = 'background-size';
+const LOGINSCREEN_SCHEMA = 'com.ubuntu.login-screen';
+const LOGINSCREEN_BACKGROUND_COLOR_KEY = 'background-color';
+const LOGINSCREEN_BACKGROUND_PICTURE_URI_KEY = 'background-picture-uri';
+const LOGINSCREEN_BACKGROUND_REPEAT_KEY = 'background-repeat';
+const LOGINSCREEN_BACKGROUND_SIZE_KEY = 'background-size';
 
 // ScreenShield animation time
 // - STANDARD_FADE_TIME is used when the session goes idle
@@ -125,22 +125,18 @@ var ScreenShield = class {
         this._lockSettings = new Gio.Settings({ schema_id: LOCKDOWN_SCHEMA });
         this._lockSettings.connect('changed::%s'.format(DISABLE_LOCK_KEY), this._syncInhibitor.bind(this));
 
-        this._loginScreenSettings = new Gio.Settings({ schema_id: LOGIN_SCREEN_SCHEMA });
-        [
-            LOGIN_SCREEN_BACKGROUND_COLOR_KEY,
-            LOGIN_SCREEN_BACKGROUND_PICTURE_URI_KEY,
-            LOGIN_SCREEN_BACKGROUND_REPEAT_KEY,
-            LOGIN_SCREEN_BACKGROUND_SIZE_KEY,
-        ].forEach(schema => this._loginScreenSettings.connect(
-            'changed::%s'.format(schema), () => this._refreshBackground()));
-        this._refreshBackground();
+        this._loginscreenSettings = new Gio.Settings({ schema_id: LOGINSCREEN_SCHEMA });
+        this._loginscreenSettings.connect('changed::%s'.format(LOGINSCREEN_BACKGROUND_COLOR_KEY), this._refreshBackground.bind(this));
+        this._loginscreenSettings.connect('changed::%s'.format(LOGINSCREEN_BACKGROUND_PICTURE_URI_KEY), this._refreshBackground.bind(this));
+        this._loginscreenSettings.connect('changed::%s'.format(LOGINSCREEN_BACKGROUND_REPEAT_KEY), this._refreshBackground.bind(this));
+        this._loginscreenSettings.connect('changed::%s'.format(LOGINSCREEN_BACKGROUND_SIZE_KEY), this._refreshBackground.bind(this));
+        this._refreshBackground()
 
         this._isModal = false;
         this._isGreeter = false;
         this._isActive = false;
         this._isLocked = false;
         this._inUnlockAnimation = false;
-        this._inhibited = false;
         this._activationTime = 0;
         this._becameActiveId = 0;
         this._lockTimeoutId = 0;
@@ -170,18 +166,10 @@ var ScreenShield = class {
         if (prevIsActive != this._isActive)
             this.emit('active-changed');
 
-        this._syncInhibitor();
-    }
-
-    _setLocked(locked) {
-        let prevIsLocked = this._isLocked;
-        this._isLocked = locked;
-
-        if (prevIsLocked !== this._isLocked)
-            this.emit('locked-changed');
-
         if (this._loginSession)
-            this._loginSession.SetLockedHintRemote(locked);
+            this._loginSession.SetLockedHintRemote(active);
+
+        this._syncInhibitor();
     }
 
     _activateDialog() {
@@ -222,57 +210,41 @@ var ScreenShield = class {
     }
 
     _refreshBackground() {
-        const inlineStyle = [];
+        let inline_style = [];
 
-        const getSetting = s => this._loginScreenSettings.get_string(s);
-        const backgroundColor = getSetting(LOGIN_SCREEN_BACKGROUND_COLOR_KEY);
-        const backgroundPictureUri = getSetting(LOGIN_SCREEN_BACKGROUND_PICTURE_URI_KEY);
-        const backgroundRepeat = getSetting(LOGIN_SCREEN_BACKGROUND_REPEAT_KEY);
-        const backgroundSize = getSetting(LOGIN_SCREEN_BACKGROUND_SIZE_KEY);
+        let backgroundColor = this._loginscreenSettings.get_string(LOGINSCREEN_BACKGROUND_COLOR_KEY);
+        let backgroundPictureUri = this._loginscreenSettings.get_string(LOGINSCREEN_BACKGROUND_PICTURE_URI_KEY);
+        let backgroundRepeat = this._loginscreenSettings.get_string(LOGINSCREEN_BACKGROUND_REPEAT_KEY);
+        let backgroundSize = this._loginscreenSettings.get_string(LOGINSCREEN_BACKGROUND_SIZE_KEY);
 
-        if (backgroundColor)
-            inlineStyle.push('background-color: %s'.format(backgroundColor));
-        if (backgroundPictureUri)
-            inlineStyle.push('background-image: url("%s")'.format(backgroundPictureUri));
-        if (backgroundRepeat !== 'default')
-            inlineStyle.push('background-repeat: %s'.format(backgroundRepeat));
-        if (backgroundSize !== 'default')
-            inlineStyle.push('background-size: %s'.format(backgroundSize));
+        if (backgroundColor != "")
+            inline_style.push("background-color: " + backgroundColor);
+        if (backgroundPictureUri != "")
+            inline_style.push("background-image: url(" + backgroundPictureUri + ")");
+        if (backgroundRepeat != "default")
+            inline_style.push("background-repeat: " + backgroundRepeat);
+        if (backgroundSize != "default")
+            inline_style.push("background-size: " + backgroundSize);
 
-        this._lockDialogGroup.set_style(inlineStyle.join('; '));
+        this._lockDialogGroup.set_style(inline_style.join('; '));
     }
 
     _syncInhibitor() {
-        const lockEnabled = this._settings.get_boolean(LOCK_ENABLED_KEY) ||
-                            this._settings.get_boolean(SUSPEND_LOCK_ENABLED_KEY);
-        const lockLocked = this._lockSettings.get_boolean(DISABLE_LOCK_KEY);
-        const inhibit = !!this._loginSession && this._loginSession.Active &&
-                         !this._isActive && lockEnabled && !lockLocked &&
-                         !!Main.sessionMode.unlockDialog;
-
-        if (inhibit === this._inhibited)
-            return;
-
-        this._inhibited = inhibit;
-
+        let lockEnabled = this._settings.get_boolean(LOCK_ENABLED_KEY) ||
+                          this._settings.get_boolean(SUSPEND_LOCK_ENABLED_KEY);
+        let lockLocked = this._lockSettings.get_boolean(DISABLE_LOCK_KEY);
+        let inhibit = this._loginSession && this._loginSession.Active &&
+                       !this._isActive && lockEnabled && !lockLocked;
         if (inhibit) {
-            this._loginManager.inhibit(_('GNOME needs to lock the screen'),
+            this._loginManager.inhibit(_("GNOME needs to lock the screen"),
                 inhibitor => {
-                    if (inhibitor) {
-                        if (this._inhibitor)
-                            inhibitor.close(null);
-                        else
-                            this._inhibitor = inhibitor;
-                    }
-
-                    // Handle uninhibits that happened after the start
-                    if (!this._inhibited) {
-                        this._inhibitor?.close(null);
-                        this._inhibitor = null;
-                    }
+                    if (this._inhibitor)
+                        this._inhibitor.close(null);
+                    this._inhibitor = inhibitor;
                 });
         } else {
-            this._inhibitor?.close(null);
+            if (this._inhibitor)
+                this._inhibitor.close(null);
             this._inhibitor = null;
         }
     }
@@ -400,25 +372,6 @@ var ScreenShield = class {
         }
     }
 
-    _showPointer() {
-        this._cursorTracker.set_pointer_visible(true);
-
-        if (this._motionId) {
-            global.stage.disconnect(this._motionId);
-            this._motionId = 0;
-        }
-    }
-
-    _hidePointerUntilMotion() {
-        this._motionId = global.stage.connect('captured-event', (stage, event) => {
-            if (event.type() === Clutter.EventType.MOTION)
-                this._showPointer();
-
-            return Clutter.EVENT_PROPAGATE;
-        });
-        this._cursorTracker.set_pointer_visible(false);
-    }
-
     _hideLockScreen(animate) {
         if (this._lockScreenState == MessageTray.State.HIDDEN)
             return;
@@ -428,7 +381,7 @@ var ScreenShield = class {
         this._lockDialogGroup.remove_all_transitions();
 
         if (animate) {
-            // Animate the lock screen out of screen
+            // Tween the lock screen out of screen
             // if velocity is not specified (i.e. we come here from pressing ESC),
             // use the same speed regardless of original position
             // if velocity is specified, it's in pixels per milliseconds
@@ -447,7 +400,7 @@ var ScreenShield = class {
             this._hideLockScreenComplete();
         }
 
-        this._showPointer();
+        this._cursorTracker.set_pointer_visible(true);
     }
 
     _ensureUnlockDialog(allowCancel) {
@@ -518,7 +471,15 @@ var ScreenShield = class {
     }
 
     _lockScreenShown(params) {
-        this._hidePointerUntilMotion();
+        let motionId = global.stage.connect('captured-event', (stage, event) => {
+            if (event.type() == Clutter.EventType.MOTION) {
+                this._cursorTracker.set_pointer_visible(true);
+                global.stage.disconnect(motionId);
+            }
+
+            return Clutter.EVENT_PROPAGATE;
+        });
+        this._cursorTracker.set_pointer_visible(false);
 
         this._lockScreenState = MessageTray.State.SHOWN;
 
@@ -627,7 +588,8 @@ var ScreenShield = class {
 
         this._activationTime = 0;
         this._setActive(false);
-        this._setLocked(false);
+        this._isLocked = false;
+        this.emit('locked-changed');
         global.set_runtime_state(LOCKED_STATE_STR, null);
     }
 
@@ -635,8 +597,7 @@ var ScreenShield = class {
         if (this._activationTime == 0)
             this._activationTime = GLib.get_monotonic_time();
 
-        if (!this._ensureUnlockDialog(true))
-            return;
+        this._ensureUnlockDialog(true);
 
         this.actor.show();
 
@@ -687,12 +648,14 @@ var ScreenShield = class {
         let userManager = AccountsService.UserManager.get_default();
         let user = userManager.get_user(GLib.get_user_name());
 
+        if (this._isGreeter)
+            this._isLocked = true;
+        else
+            this._isLocked = user.password_mode != AccountsService.UserPasswordMode.NONE;
+
         this.activate(animate);
 
-        const lock = this._isGreeter
-            ? true
-            : user.password_mode !== AccountsService.UserPasswordMode.NONE;
-        this._setLocked(lock);
+        this.emit('locked-changed');
     }
 
     // If the previous shell crashed, and gnome-session restarted us, then re-lock

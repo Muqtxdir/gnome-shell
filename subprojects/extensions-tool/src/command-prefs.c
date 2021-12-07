@@ -29,7 +29,9 @@ static gboolean
 launch_extension_prefs (const char *uuid)
 {
   g_autoptr (GDBusProxy) proxy = NULL;
-  g_autoptr (GVariant) info = NULL;
+  g_autoptr (GVariant) response = NULL;
+  g_autoptr (GVariant) asv = NULL;
+  g_autoptr (GVariantDict) info = NULL;
   g_autoptr (GError) error = NULL;
   gboolean has_prefs;
 
@@ -37,16 +39,25 @@ launch_extension_prefs (const char *uuid)
   if (proxy == NULL)
     return FALSE;
 
-  info = get_extension_property (proxy, uuid, "hasPrefs");
-  if (info == NULL)
+  response = g_dbus_proxy_call_sync (proxy,
+                                     "GetExtensionInfo",
+                                     g_variant_new ("(s)", uuid),
+                                     0,
+                                     -1,
+                                     NULL,
+                                     &error);
+  if (response == NULL)
     return FALSE;
 
-  has_prefs = g_variant_get_boolean (info);
+  asv = g_variant_get_child_value (response, 0);
+  info = g_variant_dict_new (asv);
+
+  if (!g_variant_dict_contains (info, "uuid"))
+    return FALSE;
+
+  g_variant_dict_lookup (info, "hasPrefs", "b", &has_prefs);
   if (!has_prefs)
-    {
-      g_printerr (_("Extension “%s” doesn't have preferences\n"), uuid);
-      return FALSE;
-    }
+    return FALSE;
 
   g_dbus_proxy_call_sync (proxy,
                           "OpenExtensionPrefs",
@@ -78,7 +89,6 @@ handle_prefs (int argc, char *argv[], gboolean do_help)
   g_option_context_set_help_enabled (context, FALSE);
   g_option_context_set_summary (context, _("Opens extension preferences"));
   g_option_context_add_main_entries (context, entries, GETTEXT_PACKAGE);
-  g_option_context_add_group (context, get_option_group());
 
   if (do_help)
     {

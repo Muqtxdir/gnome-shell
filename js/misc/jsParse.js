@@ -24,7 +24,8 @@ function getCompletions(text, commandHeader, globalCompletionList) {
             [expr_, base, attrHead] = matches;
 
             methods = getPropertyNamesFromExpression(base, commandHeader).filter(
-                attr => attr.slice(0, attrHead.length) === attrHead);
+                attr => attr.slice(0, attrHead.length) == attrHead
+            );
         }
 
         // Look for the empty expression or partially entered words
@@ -33,7 +34,8 @@ function getCompletions(text, commandHeader, globalCompletionList) {
         if (text == '' || matches) {
             [expr_, attrHead] = matches;
             methods = globalCompletionList.filter(
-                attr => attr.slice(0, attrHead.length) === attrHead);
+                attr => attr.slice(0, attrHead.length) == attrHead
+            );
         }
     }
 
@@ -201,6 +203,7 @@ function removeLiterals(str) {
 // Returns true if there is reason to think that eval(str)
 // will modify the global scope
 function isUnsafeExpression(str) {
+
     // Check for any sort of assignment
     // The strategy used is dumb: remove any quotes
     // or regexs and comparison operators and see if there is an '=' character.

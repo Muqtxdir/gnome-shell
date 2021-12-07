@@ -1,11 +1,7 @@
 launcherconf = configuration_data()
 launcherconf.set('app_id', app_id)
 launcherconf.set('PACKAGE_NAME', package_name)
-if vcs_tag != ''
-  launcherconf.set('PACKAGE_VERSION', '@0@ (@1@)'.format(package_version, vcs_tag))
-else
-  launcherconf.set('PACKAGE_VERSION', package_version)
-endif
+launcherconf.set('PACKAGE_VERSION', meson.project_version())
 launcherconf.set('prefix', prefix)
 launcherconf.set('libdir', libdir)
 launcherconf.set('pkgdatadir', pkgdatadir)
@@ -20,7 +16,7 @@ configure_file(
 )
 
 configure_file(
-  input: base_id + '.in',
+  input: app_id + '.in',
   output: app_id,
   configuration: launcherconf,
   install_dir: pkgdatadir,
@@ -28,11 +24,7 @@ configure_file(
 
 gnome.compile_resources(
   app_id + '.src',
-  configure_file(
-    input: base_id + '.src.gresource.xml.in',
-    output: app_id + '.src.gresource.xml',
-    configuration: {'profile': '/'.join(profile.split('.')) },
-  ),
+  app_id + '.src.gresource.xml',
   source_dir: ['.', '../../../js'],
   gresource_bundle: true,
   install: true,

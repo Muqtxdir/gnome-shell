@@ -32,6 +32,11 @@
 #define GNOME_DESKTOP_USE_UNSTABLE_API
 #include <libgnome-desktop/gnome-systemd.h>
 
+/* Memory report bits */
+#ifdef HAVE_MALLINFO
+#include <malloc.h>
+#endif
+
 #if defined __OpenBSD__ || defined __FreeBSD__
 #include <sys/sysctl.h>
 #endif
@@ -52,7 +57,6 @@ struct _ShellGlobal {
 
   ClutterStage *stage;
 
-  MetaBackend *backend;
   MetaDisplay *meta_display;
   MetaWorkspaceManager *workspace_manager;
   Display *xdisplay;
@@ -92,7 +96,6 @@ enum {
   PROP_0,
 
   PROP_SESSION_MODE,
-  PROP_BACKEND,
   PROP_DISPLAY,
   PROP_WORKSPACE_MANAGER,
   PROP_SCREEN_WIDTH,
@@ -145,7 +148,6 @@ got_switcheroo_control_gpus_property_cb (GObject      *source_object,
 
   global = user_data;
   g_dbus_proxy_set_cached_property (global->switcheroo_control, "GPUs", gpus);
-  g_object_notify (G_OBJECT (global), "switcheroo-control");
 }
 
 static void
@@ -173,11 +175,7 @@ switcheroo_control_ready_cb (GObject      *source_object,
 
   cached_props = g_dbus_proxy_get_cached_property_names (global->switcheroo_control);
   if (cached_props != NULL && g_strv_contains ((const gchar * const *) cached_props, "GPUs"))
-    {
-      g_object_notify (G_OBJECT (global), "switcheroo-control");
-      return;
-    }
-  /* Delay property notification until we have all the properties gathered */
+    return;
 
   g_dbus_connection_call (g_dbus_proxy_get_connection (global->switcheroo_control),
                           g_dbus_proxy_get_name (global->switcheroo_control),
@@ -236,9 +234,6 @@ shell_global_get_property(GObject         *object,
     {
     case PROP_SESSION_MODE:
       g_value_set_string (value, shell_global_get_session_mode (global));
-      break;
-    case PROP_BACKEND:
-      g_value_set_object (value, global->backend);
       break;
     case PROP_DISPLAY:
       g_value_set_object (value, global->meta_display);
@@ -305,36 +300,6 @@ shell_global_get_property(GObject         *object,
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
     }
-}
-
-static void
-switcheroo_appeared_cb (GDBusConnection *connection,
-                        const char     *name,
-                        const char     *name_owner,
-                        gpointer        user_data)
-{
-  ShellGlobal *global = user_data;
-
-  g_debug ("switcheroo-control appeared");
-  shell_net_hadess_switcheroo_control_proxy_new_for_bus (G_BUS_TYPE_SYSTEM,
-                                                         G_DBUS_PROXY_FLAGS_NONE,
-                                                         "net.hadess.SwitcherooControl",
-                                                         "/net/hadess/SwitcherooControl",
-                                                         global->switcheroo_cancellable,
-                                                         switcheroo_control_ready_cb,
-                                                         global);
-}
-
-static void
-switcheroo_vanished_cb (GDBusConnection *connection,
-                        const char      *name,
-                        gpointer         user_data)
-{
-  ShellGlobal *global = user_data;
-
-  g_debug ("switcheroo-control vanished");
-  g_clear_object (&global->switcheroo_control);
-  g_object_notify (G_OBJECT (global), "switcheroo-control");
 }
 
 static void
@@ -432,13 +397,13 @@ shell_global_init (ShellGlobal *global)
                                             g_object_unref, g_object_unref);
 
   global->switcheroo_cancellable = g_cancellable_new ();
-  g_bus_watch_name (G_BUS_TYPE_SYSTEM,
-                    "net.hadess.SwitcherooControl",
-                    G_BUS_NAME_WATCHER_FLAGS_NONE,
-                    switcheroo_appeared_cb,
-                    switcheroo_vanished_cb,
-                    global,
-                    NULL);
+  shell_net_hadess_switcheroo_control_proxy_new_for_bus (G_BUS_TYPE_SYSTEM,
+                                                         G_DBUS_PROXY_FLAGS_NONE,
+                                                         "net.hadess.SwitcherooControl",
+                                                         "/net/hadess/SwitcherooControl",
+                                                         global->switcheroo_cancellable,
+                                                         switcheroo_control_ready_cb,
+                                                         global);
 }
 
 static void
@@ -515,13 +480,6 @@ shell_global_class_init (ShellGlobalClass *klass)
                                                      "Screen height, in pixels",
                                                      0, G_MAXINT, 1,
                                                      G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
-  g_object_class_install_property (gobject_class,
-                                   PROP_BACKEND,
-                                   g_param_spec_object ("backend",
-                                                        "Backend",
-                                                        "MetaBackend object",
-                                                        META_TYPE_BACKEND,
-                                                        G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
   g_object_class_install_property (gobject_class,
                                    PROP_DISPLAY,
                                    g_param_spec_object ("display",
@@ -909,9 +867,8 @@ load_gl_symbol (const char  *name,
 }
 
 static void
-global_stage_after_paint (ClutterStage     *stage,
-                          ClutterStageView *stage_view,
-                          ShellGlobal      *global)
+global_stage_after_paint (ClutterStage *stage,
+                          ShellGlobal  *global)
 {
   /* At this point, we've finished all layout and painting, but haven't
    * actually flushed or swapped */
@@ -1005,7 +962,6 @@ _shell_global_set_plugin (ShellGlobal *global,
   g_return_if_fail (SHELL_IS_GLOBAL (global));
   g_return_if_fail (global->plugin == NULL);
 
-  global->backend = meta_get_backend ();
   global->plugin = plugin;
   global->wm = shell_wm_new (plugin);
 
@@ -1088,11 +1044,11 @@ _shell_global_get_gjs_context (ShellGlobal *global)
  * overview mode or the "looking glass" debug overlay, that block
  * application and normal key shortcuts.
  *
- * Returns: %TRUE if we successfully entered the mode. %FALSE if we couldn't
+ * Returns: %TRUE if we succesfully entered the mode. %FALSE if we couldn't
  *  enter the mode. Failure may occur because an application has the pointer
  *  or keyboard grabbed, because Mutter is in a mode itself like moving a
  *  window or alt-Tab window selection, or because shell_global_begin_modal()
- *  was previously called.
+ *  was previouly called.
  */
 gboolean
 shell_global_begin_modal (ShellGlobal       *global,
@@ -1251,7 +1207,7 @@ shell_global_reexec_self (ShellGlobal *global)
   char *buf;
   char *buf_p;
   char *buf_end;
-  g_autoptr (GError) error = NULL;
+  GError *error = NULL;
 
   if (!g_file_get_contents ("/proc/self/cmdline", &buf, &len, &error))
     {
@@ -1371,21 +1327,56 @@ shell_global_get_pointer (ShellGlobal         *global,
 {
   ClutterModifierType raw_mods;
   MetaCursorTracker *tracker;
-  graphene_point_t point;
 
   tracker = meta_cursor_tracker_get_for_display (global->meta_display);
-  meta_cursor_tracker_get_pointer (tracker, &point, &raw_mods);
-
-  if (x)
-    *x = point.x;
-  if (y)
-    *y = point.y;
+  meta_cursor_tracker_get_pointer (tracker, x, y, &raw_mods);
 
   *mods = raw_mods & CLUTTER_MODIFIER_MASK;
 }
 
 /**
- * shell_global_get_switcheroo_control:
+ * shell_global_sync_pointer:
+ * @global: the #ShellGlobal
+ *
+ * Ensures that clutter is aware of the current pointer position,
+ * causing enter and leave events to be emitted if the pointer moved
+ * behind our back (ie, during a pointer grab).
+ */
+void
+shell_global_sync_pointer (ShellGlobal *global)
+{
+  int x, y;
+  ClutterModifierType mods;
+  ClutterEvent *event;
+  ClutterSeat *seat;
+
+  shell_global_get_pointer (global, &x, &y, &mods);
+
+  seat = clutter_backend_get_default_seat (clutter_get_default_backend ());
+  event = clutter_event_new (CLUTTER_MOTION);
+
+  event->motion.time = shell_global_get_current_time (global);
+  event->motion.flags = CLUTTER_EVENT_FLAG_SYNTHETIC;
+  event->motion.stage = global->stage;
+  event->motion.x = x;
+  event->motion.y = y;
+  event->motion.modifier_state = mods;
+  event->motion.axes = NULL;
+  clutter_event_set_device (event, clutter_seat_get_pointer (seat));
+
+  /* Leaving event.source NULL will force clutter to look it up, which
+   * will generate enter/leave events as a side effect, if they are
+   * needed. We need a better way to do this though... see
+   * http://bugzilla.clutter-project.org/show_bug.cgi?id=2615.
+   */
+  clutter_event_set_source_device (event, NULL);
+
+  clutter_event_put (event);
+  clutter_event_free (event);
+}
+
+/**
+ * _shell_global_get_switcheroo_control: (skip)
  * @global: A #ShellGlobal
  *
  * Get the global #GDBusProxy instance for the switcheroo-control
@@ -1395,7 +1386,7 @@ shell_global_get_pointer (ShellGlobal         *global,
  *   or %NULL on error.
  */
 GDBusProxy *
-shell_global_get_switcheroo_control (ShellGlobal  *global)
+_shell_global_get_switcheroo_control    (ShellGlobal  *global)
 {
   return global->switcheroo_control;
 }
@@ -1550,7 +1541,7 @@ run_leisure_functions (gpointer data)
       if (closure->notify)
         closure->notify (closure->user_data);
 
-      g_free (closure);
+      g_slice_free (LeisureClosure, closure);
     }
 
   g_slist_free (closures);
@@ -1624,8 +1615,10 @@ shell_global_end_work (ShellGlobal *global)
  * Idle means here no animations, no redrawing, and no ongoing background
  * work. Since there is currently no way to hook into the Clutter master
  * clock and know when is running, the implementation here is somewhat
- * approximation. Animations may be detected as terminating early if they
- * can be drawn fast enough so that the event loop goes idle between frames.
+ * approximation. Animations done through the shell's Tweener module will
+ * be handled properly, but other animations may be detected as terminating
+ * early if they can be drawn fast enough so that the event loop goes idle
+ * between frames.
  *
  * The intent of this function is for performance measurement runs
  * where a number of actions should be run serially and each action is
@@ -1639,7 +1632,7 @@ shell_global_run_at_leisure (ShellGlobal         *global,
                              gpointer             user_data,
                              GDestroyNotify       notify)
 {
-  LeisureClosure *closure = g_new (LeisureClosure, 1);
+  LeisureClosure *closure = g_slice_new (LeisureClosure);
   closure->func = func;
   closure->user_data = user_data;
   closure->notify = notify;

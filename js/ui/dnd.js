@@ -56,15 +56,6 @@ function _getEventHandlerActor() {
     return eventHandlerActor;
 }
 
-function _getRealActorScale(actor) {
-    let scale = 1.0;
-    while (actor) {
-        scale *= actor.scale_x;
-        actor = actor.get_parent();
-    }
-    return scale;
-}
-
 function addDragMonitor(monitor) {
     dragMonitors.push(monitor);
 }
@@ -80,13 +71,10 @@ function removeDragMonitor(monitor) {
 
 var _Draggable = class _Draggable {
     constructor(actor, params) {
-        params = Params.parse(params, {
-            manualMode: false,
-            timeoutThreshold: 0,
-            restoreOnSuccess: false,
-            dragActorMaxSize: undefined,
-            dragActorOpacity: undefined,
-        });
+        params = Params.parse(params, { manualMode: false,
+                                        restoreOnSuccess: false,
+                                        dragActorMaxSize: undefined,
+                                        dragActorOpacity: undefined });
 
         this.actor = actor;
         this._dragState = DragState.INIT;
@@ -111,7 +99,6 @@ var _Draggable = class _Draggable {
         this._restoreOnSuccess = params.restoreOnSuccess;
         this._dragActorMaxSize = params.dragActorMaxSize;
         this._dragActorOpacity = params.dragActorOpacity;
-        this._dragTimeoutThreshold = params.timeoutThreshold;
 
         this._buttonDown = false; // The mouse button has been pressed and has not yet been released.
         this._animationInProgress = false; // The drag is over and the item is in the process of animating to its original position (snapping back or reverting).
@@ -131,8 +118,6 @@ var _Draggable = class _Draggable {
         let [stageX, stageY] = event.get_coords();
         this._dragStartX = stageX;
         this._dragStartY = stageY;
-        this._dragStartTime = event.get_time();
-        this._dragThresholdIgnored = false;
 
         return Clutter.EVENT_PROPAGATE;
     }
@@ -154,8 +139,6 @@ var _Draggable = class _Draggable {
 
         this._buttonDown = true;
         this._grabActor(event.get_device(), event.get_event_sequence());
-        this._dragStartTime = event.get_time();
-        this._dragThresholdIgnored = false;
 
         let [stageX, stageY] = event.get_coords();
         this._dragStartX = stageX;
@@ -355,8 +338,6 @@ var _Draggable = class _Draggable {
         this._dragX = this._dragStartX = stageX;
         this._dragY = this._dragStartY = stageY;
 
-        let scaledWidth, scaledHeight;
-
         if (this.actor._delegate && this.actor._delegate.getDragActor) {
             this._dragActor = this.actor._delegate.getDragActor();
             Main.uiGroup.add_child(this._dragActor);
@@ -389,45 +370,29 @@ var _Draggable = class _Draggable {
 
             this._dragOffsetX = this._dragActor.x - this._dragStartX;
             this._dragOffsetY = this._dragActor.y - this._dragStartY;
-
-            [scaledWidth, scaledHeight] = this._dragActor.get_transformed_size();
         } else {
             this._dragActor = this.actor;
 
             this._dragActorSource = undefined;
             this._dragOrigParent = this.actor.get_parent();
-            this._dragActorHadFixedPos = this._dragActor.fixed_position_set;
-            this._dragOrigX = this._dragActor.allocation.x1;
-            this._dragOrigY = this._dragActor.allocation.y1;
-            this._dragActorHadNatWidth = this._dragActor.natural_width_set;
-            this._dragActorHadNatHeight = this._dragActor.natural_height_set;
-            this._dragOrigWidth = this._dragActor.allocation.get_width();
-            this._dragOrigHeight = this._dragActor.allocation.get_height();
+            this._dragOrigX = this._dragActor.x;
+            this._dragOrigY = this._dragActor.y;
             this._dragOrigScale = this._dragActor.scale_x;
 
-            // Ensure actors with an allocation smaller than their natural size
-            // retain their size
-            this._dragActor.set_size(...this._dragActor.allocation.get_size());
+            // Set the actor's scale such that it will keep the same
+            // transformed size when it's reparented to the uiGroup
+            let [scaledWidth, scaledHeight] = this.actor.get_transformed_size();
+            this._dragActor.set_scale(scaledWidth / this.actor.width,
+                                      scaledHeight / this.actor.height);
 
-            const transformedExtents = this._dragActor.get_transformed_extents();
-
-            this._dragOffsetX = transformedExtents.origin.x - this._dragStartX;
-            this._dragOffsetY = transformedExtents.origin.y - this._dragStartY;
-
-            scaledWidth = transformedExtents.get_width();
-            scaledHeight = transformedExtents.get_height();
-
-            this._dragActor.scale_x = scaledWidth / this._dragOrigWidth;
-            this._dragActor.scale_y = scaledHeight / this._dragOrigHeight;
+            let [actorStageX, actorStageY] = this.actor.get_transformed_position();
+            this._dragOffsetX = actorStageX - this._dragStartX;
+            this._dragOffsetY = actorStageY - this._dragStartY;
 
             this._dragOrigParent.remove_actor(this._dragActor);
             Main.uiGroup.add_child(this._dragActor);
             Main.uiGroup.set_child_above_sibling(this._dragActor, null);
             Shell.util_set_hidden_from_pick(this._dragActor, true);
-
-            this._dragOrigParentDestroyId = this._dragOrigParent.connect('destroy', () => {
-                this._dragOrigParent = null;
-            });
         }
 
         this._dragActorDestroyId = this._dragActor.connect('destroy', () => {
@@ -452,11 +417,8 @@ var _Draggable = class _Draggable {
         this._dragOffsetX -= transX;
         this._dragOffsetY -= transY;
 
-        this._dragActor.set_position(
-            this._dragX + this._dragOffsetX,
-            this._dragY + this._dragOffsetY);
-
         if (this._dragActorMaxSize != undefined) {
+            let [scaledWidth, scaledHeight] = this._dragActor.get_transformed_size();
             let currentSize = Math.max(scaledWidth, scaledHeight);
             if (currentSize > this._dragActorMaxSize) {
                 let scale = this._dragActorMaxSize / currentSize;
@@ -473,34 +435,22 @@ var _Draggable = class _Draggable {
                     scale_y: scale * origScale,
                     duration: SCALE_ANIMATION_TIME,
                     mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-                    onComplete: () => {
-                        this._updateActorPosition(origScale,
-                            origDragOffsetX, origDragOffsetY, transX, transY);
-                    },
                 });
 
                 this._dragActor.get_transition('scale-x').connect('new-frame', () => {
-                    this._updateActorPosition(origScale,
-                        origDragOffsetX, origDragOffsetY, transX, transY);
+                    let currentScale = this._dragActor.scale_x / origScale;
+                    this._dragOffsetX = currentScale * origDragOffsetX - transX;
+                    this._dragOffsetY = currentScale * origDragOffsetY - transY;
+                    this._dragActor.set_position(
+                        this._dragX + this._dragOffsetX,
+                        this._dragY + this._dragOffsetY);
                 });
             }
         }
     }
 
-    _updateActorPosition(origScale, origDragOffsetX, origDragOffsetY, transX, transY) {
-        const currentScale = this._dragActor.scale_x / origScale;
-        this._dragOffsetX = currentScale * origDragOffsetX - transX;
-        this._dragOffsetY = currentScale * origDragOffsetY - transY;
-        this._dragActor.set_position(
-            this._dragX + this._dragOffsetX,
-            this._dragY + this._dragOffsetY);
-    }
-
     _maybeStartDrag(event) {
         let [stageX, stageY] = event.get_coords();
-
-        if (this._dragThresholdIgnored)
-            return Clutter.EVENT_PROPAGATE;
 
         // See if the user has moved the mouse enough to trigger a drag
         let scaleFactor = St.ThemeContext.get_for_stage(global.stage).scale_factor;
@@ -508,24 +458,11 @@ var _Draggable = class _Draggable {
         if (!currentDraggable &&
             (Math.abs(stageX - this._dragStartX) > threshold ||
              Math.abs(stageY - this._dragStartY) > threshold)) {
-            const deviceType = event.get_source_device().get_device_type();
-            const isPointerOrTouchpad =
-                deviceType === Clutter.InputDeviceType.POINTER_DEVICE ||
-                deviceType === Clutter.InputDeviceType.TOUCHPAD_DEVICE;
-            const ellapsedTime = event.get_time() - this._dragStartTime;
-
-            // Pointer devices (e.g. mouse) start the drag immediately
-            if (isPointerOrTouchpad || ellapsedTime > this._dragTimeoutThreshold) {
-                this.startDrag(stageX, stageY, event.get_time(), this._touchSequence, event.get_device());
-                this._updateDragPosition(event);
-            } else {
-                this._dragThresholdIgnored = true;
-                this._ungrabActor();
-                return Clutter.EVENT_PROPAGATE;
-            }
+            this.startDrag(stageX, stageY, event.get_time(), this._touchSequence, event.get_device());
+            this._updateDragPosition(event);
         }
 
-        return Clutter.EVENT_STOP;
+        return true;
     }
 
     _pickTargetActor() {
@@ -692,7 +629,11 @@ var _Draggable = class _Draggable {
             // its parent, adjusting for the fact that the parent
             // may have been moved or scaled
             let [parentX, parentY] = this._dragOrigParent.get_transformed_position();
-            let parentScale = _getRealActorScale(this._dragOrigParent);
+            let [parentWidth] = this._dragOrigParent.get_size();
+            let [parentScaledWidth] = this._dragOrigParent.get_transformed_size();
+            let parentScale = 1.0;
+            if (parentWidth != 0)
+                parentScale = parentScaledWidth / parentWidth;
 
             x = parentX + parentScale * this._dragOrigX;
             y = parentY + parentScale * this._dragOrigY;
@@ -777,14 +718,7 @@ var _Draggable = class _Draggable {
             Main.uiGroup.remove_child(this._dragActor);
             this._dragOrigParent.add_actor(this._dragActor);
             dragActor.set_scale(this._dragOrigScale, this._dragOrigScale);
-            if (this._dragActorHadFixedPos)
-                dragActor.set_position(this._dragOrigX, this._dragOrigY);
-            else
-                dragActor.fixed_position_set = false;
-            if (this._dragActorHadNatWidth)
-                this._dragActor.set_width(-1);
-            if (this._dragActorHadNatHeight)
-                this._dragActor.set_height(-1);
+            dragActor.set_position(this._dragOrigX, this._dragOrigY);
         } else {
             dragActor.destroy();
         }
@@ -798,6 +732,7 @@ var _Draggable = class _Draggable {
             Shell.util_set_hidden_from_pick(this._dragActor, false);
 
         this._ungrabEvents();
+        global.sync_pointer();
 
         if (this._updateHoverId) {
             GLib.source_remove(this._updateHoverId);
@@ -807,11 +742,6 @@ var _Draggable = class _Draggable {
         if (this._dragActor) {
             this._dragActor.disconnect(this._dragActorDestroyId);
             this._dragActor = null;
-        }
-
-        if (this._dragOrigParent) {
-            this._dragOrigParent.disconnect(this._dragOrigParentDestroyId);
-            this._dragOrigParent = null;
         }
 
         this._dragState = DragState.INIT;

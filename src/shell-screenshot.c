@@ -12,28 +12,6 @@
 #include "shell-screenshot.h"
 #include "shell-util.h"
 
-typedef enum _ShellScreenshotFlag
-{
-  SHELL_SCREENSHOT_FLAG_NONE,
-  SHELL_SCREENSHOT_FLAG_INCLUDE_CURSOR,
-} ShellScreenshotFlag;
-
-typedef enum _ShellScreenshotMode
-{
-  SHELL_SCREENSHOT_SCREEN,
-  SHELL_SCREENSHOT_WINDOW,
-  SHELL_SCREENSHOT_AREA,
-} ShellScreenshotMode;
-
-enum
-{
-  SCREENSHOT_TAKEN,
-
-  LAST_SIGNAL
-};
-
-static guint signals[LAST_SIGNAL] = { 0, };
-
 typedef struct _ShellScreenshotPrivate  ShellScreenshotPrivate;
 
 struct _ShellScreenshot
@@ -48,31 +26,33 @@ struct _ShellScreenshotPrivate
   ShellGlobal *global;
 
   GOutputStream *stream;
-  ShellScreenshotFlag flags;
-  ShellScreenshotMode mode;
 
   GDateTime *datetime;
 
   cairo_surface_t *image;
   cairo_rectangle_int_t screenshot_area;
 
+  gboolean include_cursor;
   gboolean include_frame;
 };
+
+typedef enum
+{
+  SHELL_SCREENSHOT_SCREEN,
+  SHELL_SCREENSHOT_WINDOW,
+  SHELL_SCREENSHOT_AREA,
+} ShellScreenshotMode;
 
 G_DEFINE_TYPE_WITH_PRIVATE (ShellScreenshot, shell_screenshot, G_TYPE_OBJECT);
 
 static void
+grab_screenshot (ClutterActor *stage,
+                 GTask        *result);
+
+static void
 shell_screenshot_class_init (ShellScreenshotClass *screenshot_class)
 {
-  signals[SCREENSHOT_TAKEN] =
-    g_signal_new ("screenshot-taken",
-                  G_TYPE_FROM_CLASS(screenshot_class),
-                  G_SIGNAL_RUN_LAST,
-                  0,
-                  NULL, NULL, NULL,
-                  G_TYPE_NONE,
-                  1,
-                  META_TYPE_RECTANGLE);
+  (void) screenshot_class;
 }
 
 static void
@@ -97,6 +77,8 @@ on_screenshot_written (GObject      *source,
   g_clear_pointer (&priv->image, cairo_surface_destroy);
   g_clear_object (&priv->stream);
   g_clear_pointer (&priv->datetime, g_date_time_unref);
+
+  meta_enable_unredirect_for_display (shell_global_get_display (priv->global));
 }
 
 static void
@@ -139,49 +121,46 @@ write_screenshot_thread (GTask        *result,
 }
 
 static void
-do_grab_screenshot (ShellScreenshot     *screenshot,
-                    int                  x,
-                    int                  y,
-                    int                  width,
-                    int                  height,
-                    ShellScreenshotFlag  flags)
+do_grab_screenshot (ShellScreenshot *screenshot,
+                    ClutterStage    *stage,
+                    int               x,
+                    int               y,
+                    int               width,
+                    int               height)
 {
   ShellScreenshotPrivate *priv = screenshot->priv;
-  ClutterStage *stage = shell_global_get_stage (priv->global);
   cairo_rectangle_int_t screenshot_rect = { x, y, width, height };
-  int image_width;
-  int image_height;
-  float scale;
-  cairo_surface_t *image;
-  ClutterPaintFlag paint_flags = CLUTTER_PAINT_FLAG_NONE;
-  g_autoptr (GError) error = NULL;
+  ClutterCapture *captures;
+  int n_captures;
+  int i;
 
-  clutter_stage_get_capture_final_size (stage, &screenshot_rect,
-                                        &image_width,
-                                        &image_height,
-                                        &scale);
-  image = cairo_image_surface_create (CAIRO_FORMAT_ARGB32,
-                                      image_width, image_height);
+  if (!clutter_stage_capture (stage, FALSE,
+                              &screenshot_rect,
+                              &captures,
+                              &n_captures))
+    return;
 
-  if (flags & SHELL_SCREENSHOT_FLAG_INCLUDE_CURSOR)
-    paint_flags |= CLUTTER_PAINT_FLAG_FORCE_CURSORS;
+  if (n_captures == 1)
+    priv->image = cairo_surface_reference (captures[0].image);
   else
-    paint_flags |= CLUTTER_PAINT_FLAG_NO_CURSORS;
-  if (!clutter_stage_paint_to_buffer (stage, &screenshot_rect, scale,
-                                      cairo_image_surface_get_data (image),
-                                      cairo_image_surface_get_stride (image),
-                                      CLUTTER_CAIRO_FORMAT_ARGB32,
-                                      paint_flags,
-                                      &error))
     {
-      cairo_surface_destroy (image);
-      g_warning ("Failed to take screenshot: %s", error->message);
-      return;
+      float target_scale;
+
+      clutter_stage_get_capture_final_size (stage, &screenshot_rect,
+                                            &width, &height, &target_scale);
+      priv->image = shell_util_composite_capture_images (captures,
+                                                         n_captures,
+                                                         x, y,
+                                                         width, height,
+                                                         target_scale);
     }
 
-  priv->image = image;
-
   priv->datetime = g_date_time_new_now_local ();
+
+  for (i = 0; i < n_captures; i++)
+    cairo_surface_destroy (captures[i].image);
+
+  g_free (captures);
 }
 
 static void
@@ -200,7 +179,6 @@ draw_cursor_image (cairo_surface_t       *surface,
   int x, y;
   int xhot, yhot;
   double xscale, yscale;
-  graphene_point_t point;
 
   display = shell_global_get_display (shell_global_get ());
   tracker = meta_cursor_tracker_get_for_display (display);
@@ -210,11 +188,9 @@ draw_cursor_image (cairo_surface_t       *surface,
     return;
 
   screenshot_region = cairo_region_create_rectangle (&area);
-  meta_cursor_tracker_get_pointer (tracker, &point, NULL);
-  x = point.x;
-  y = point.y;
+  meta_cursor_tracker_get_pointer (tracker, &x, &y, NULL);
 
-  if (!cairo_region_contains_point (screenshot_region, point.x, point.y))
+  if (!cairo_region_contains_point (screenshot_region, x, y))
     {
       cairo_region_destroy (screenshot_region);
       return;
@@ -263,26 +239,84 @@ draw_cursor_image (cairo_surface_t       *surface,
 }
 
 static void
-grab_screenshot (ShellScreenshot     *screenshot,
-                 ShellScreenshotFlag  flags,
-                 GTask               *result)
+on_paint (ClutterActor        *actor,
+          ClutterPaintContext *paint_context,
+          GTask               *result)
 {
-  ShellScreenshotPrivate *priv = screenshot->priv;
+  grab_screenshot (actor, result);
+}
+
+static void
+on_actors_painted (ClutterActor *actor,
+                   GTask        *result)
+{
+  grab_screenshot (actor, result);
+}
+
+static void
+grab_screenshot (ClutterActor *stage,
+                 GTask        *result)
+{
   MetaDisplay *display;
   int width, height;
+  ShellScreenshot *screenshot = g_task_get_source_object (result);
+  ShellScreenshotPrivate *priv = screenshot->priv;
   GTask *task;
 
   display = shell_global_get_display (priv->global);
   meta_display_get_size (display, &width, &height);
 
-  do_grab_screenshot (screenshot,
-                      0, 0, width, height,
-                      flags);
+  do_grab_screenshot (screenshot, CLUTTER_STAGE (stage), 0, 0, width, height);
+
+  if (meta_display_get_n_monitors (display) > 1)
+    {
+      cairo_region_t *screen_region = cairo_region_create ();
+      cairo_region_t *stage_region;
+      MetaRectangle monitor_rect;
+      cairo_rectangle_int_t stage_rect;
+      int i;
+      cairo_t *cr;
+
+      for (i = meta_display_get_n_monitors (display) - 1; i >= 0; i--)
+        {
+          meta_display_get_monitor_geometry (display, i, &monitor_rect);
+          cairo_region_union_rectangle (screen_region,
+                                        (const cairo_rectangle_int_t *) &monitor_rect);
+        }
+
+      stage_rect.x = 0;
+      stage_rect.y = 0;
+      stage_rect.width = width;
+      stage_rect.height = height;
+
+      stage_region = cairo_region_create_rectangle ((const cairo_rectangle_int_t *) &stage_rect);
+      cairo_region_xor (stage_region, screen_region);
+      cairo_region_destroy (screen_region);
+
+      cr = cairo_create (priv->image);
+
+      for (i = 0; i < cairo_region_num_rectangles (stage_region); i++)
+        {
+          cairo_rectangle_int_t rect;
+          cairo_region_get_rectangle (stage_region, i, &rect);
+          cairo_rectangle (cr, (double) rect.x, (double) rect.y, (double) rect.width, (double) rect.height);
+          cairo_fill (cr);
+        }
+
+      cairo_destroy (cr);
+      cairo_region_destroy (stage_region);
+    }
 
   priv->screenshot_area.x = 0;
   priv->screenshot_area.y = 0;
   priv->screenshot_area.width = width;
   priv->screenshot_area.height = height;
+
+  if (priv->include_cursor)
+    draw_cursor_image (priv->image, priv->screenshot_area);
+
+  g_signal_handlers_disconnect_by_func (stage, on_paint, result);
+  g_signal_handlers_disconnect_by_func (stage, on_actors_painted, result);
 
   task = g_task_new (screenshot, NULL, on_screenshot_written, result);
   g_task_run_in_thread (task, write_screenshot_thread);
@@ -290,10 +324,31 @@ grab_screenshot (ShellScreenshot     *screenshot,
 }
 
 static void
-grab_window_screenshot (ShellScreenshot     *screenshot,
-                        ShellScreenshotFlag  flags,
-                        GTask               *result)
+grab_area_screenshot (ClutterActor *stage,
+                      GTask        *result)
 {
+  ShellScreenshot *screenshot = g_task_get_source_object (result);
+  ShellScreenshotPrivate *priv = screenshot->priv;
+  GTask *task;
+
+  do_grab_screenshot (screenshot,
+                      CLUTTER_STAGE (stage),
+                      priv->screenshot_area.x,
+                      priv->screenshot_area.y,
+                      priv->screenshot_area.width,
+                      priv->screenshot_area.height);
+
+  g_signal_handlers_disconnect_by_func (stage, grab_area_screenshot, result);
+  task = g_task_new (screenshot, NULL, on_screenshot_written, result);
+  g_task_run_in_thread (task, write_screenshot_thread);
+  g_object_unref (task);
+}
+
+static void
+grab_window_screenshot (ClutterActor *stage,
+                        GTask        *result)
+{
+  ShellScreenshot *screenshot = g_task_get_source_object (result);
   ShellScreenshotPrivate *priv = screenshot->priv;
   GTask *task;
   MetaDisplay *display = shell_global_get_display (priv->global);
@@ -325,12 +380,13 @@ grab_window_screenshot (ShellScreenshot     *screenshot,
 
   priv->datetime = g_date_time_new_now_local ();
 
-  if (flags & SHELL_SCREENSHOT_FLAG_INCLUDE_CURSOR)
+  if (priv->include_cursor)
     {
       if (meta_window_get_client_type (window) == META_WINDOW_CLIENT_TYPE_WAYLAND)
         {
           float resource_scale;
-          resource_scale = clutter_actor_get_resource_scale (window_actor);
+          if (!clutter_actor_get_resource_scale (window_actor, &resource_scale))
+            resource_scale = 1.0f;
 
           cairo_surface_set_device_scale (priv->image, resource_scale, resource_scale);
         }
@@ -338,11 +394,31 @@ grab_window_screenshot (ShellScreenshot     *screenshot,
       draw_cursor_image (priv->image, priv->screenshot_area);
     }
 
-  g_signal_emit (screenshot, signals[SCREENSHOT_TAKEN], 0, &rect);
-
+  g_signal_handlers_disconnect_by_func (stage, grab_window_screenshot, result);
   task = g_task_new (screenshot, NULL, on_screenshot_written, result);
   g_task_run_in_thread (task, write_screenshot_thread);
   g_object_unref (task);
+}
+
+static void
+grab_pixel (ClutterActor *stage,
+            GTask        *result)
+{
+  ShellScreenshot *screenshot = g_task_get_source_object (result);
+  ShellScreenshotPrivate *priv = screenshot->priv;
+
+  do_grab_screenshot (screenshot,
+                      CLUTTER_STAGE (stage),
+                      priv->screenshot_area.x,
+                      priv->screenshot_area.y,
+                      1,
+                      1);
+
+  meta_enable_unredirect_for_display (shell_global_get_display (priv->global));
+
+  g_signal_handlers_disconnect_by_func (stage, grab_pixel, result);
+  g_task_return_boolean (result, TRUE);
+  g_object_unref (result);
 }
 
 static gboolean
@@ -360,41 +436,6 @@ finish_screenshot (ShellScreenshot        *screenshot,
     *area = &priv->screenshot_area;
 
   return TRUE;
-}
-
-static void
-on_after_paint (ClutterStage     *stage,
-                ClutterStageView *view,
-                GTask            *result)
-{
-  ShellScreenshot *screenshot = g_task_get_task_data (result);
-  ShellScreenshotPrivate *priv = screenshot->priv;
-  MetaDisplay *display = shell_global_get_display (priv->global);
-  GTask *task;
-
-  g_signal_handlers_disconnect_by_func (stage, on_after_paint, result);
-
-  if (priv->mode == SHELL_SCREENSHOT_AREA)
-    {
-      do_grab_screenshot (screenshot,
-                          priv->screenshot_area.x,
-                          priv->screenshot_area.y,
-                          priv->screenshot_area.width,
-                          priv->screenshot_area.height,
-                          priv->flags);
-
-      task = g_task_new (screenshot, NULL, on_screenshot_written, result);
-      g_task_run_in_thread (task, write_screenshot_thread);
-    }
-  else
-    {
-      grab_screenshot (screenshot, priv->flags, result);
-    }
-
-  g_signal_emit (screenshot, signals[SCREENSHOT_TAKEN], 0,
-                 (cairo_rectangle_int_t *) &priv->screenshot_area);
-
-  meta_enable_unredirect_for_display (display);
 }
 
 /**
@@ -417,9 +458,9 @@ shell_screenshot_screenshot (ShellScreenshot     *screenshot,
                              GAsyncReadyCallback  callback,
                              gpointer             user_data)
 {
+  ClutterActor *stage;
   ShellScreenshotPrivate *priv;
   GTask *result;
-  ShellScreenshotFlag flags;
 
   g_return_if_fail (SHELL_IS_SCREENSHOT (screenshot));
   g_return_if_fail (G_IS_OUTPUT_STREAM (stream));
@@ -441,33 +482,19 @@ shell_screenshot_screenshot (ShellScreenshot     *screenshot,
 
   result = g_task_new (screenshot, NULL, callback, user_data);
   g_task_set_source_tag (result, shell_screenshot_screenshot);
-  g_task_set_task_data (result, screenshot, NULL);
 
   priv->stream = g_object_ref (stream);
+  priv->include_cursor = include_cursor;
 
-  flags = SHELL_SCREENSHOT_FLAG_NONE;
-  if (include_cursor)
-    flags |= SHELL_SCREENSHOT_FLAG_INCLUDE_CURSOR;
+  stage = CLUTTER_ACTOR (shell_global_get_stage (priv->global));
 
-  if (meta_is_wayland_compositor ())
-    {
-      grab_screenshot (screenshot, flags, result);
+  meta_disable_unredirect_for_display (shell_global_get_display (priv->global));
 
-      g_signal_emit (screenshot, signals[SCREENSHOT_TAKEN], 0,
-                     (cairo_rectangle_int_t *) &priv->screenshot_area);
-    }
-  else
-    {
-      MetaDisplay *display = shell_global_get_display (priv->global);
-      ClutterStage *stage = shell_global_get_stage (priv->global);
+  g_signal_connect_after (stage, "actors-painted",
+                          G_CALLBACK (on_actors_painted),
+                          result);
 
-      meta_disable_unredirect_for_display (display);
-      clutter_actor_queue_redraw (CLUTTER_ACTOR (stage));
-      priv->flags = flags;
-      priv->mode = SHELL_SCREENSHOT_SCREEN;
-      g_signal_connect (stage, "after-paint",
-                        G_CALLBACK (on_after_paint), result);
-    }
+  clutter_actor_queue_redraw (stage);
 }
 
 /**
@@ -523,9 +550,9 @@ shell_screenshot_screenshot_area (ShellScreenshot     *screenshot,
                                   GAsyncReadyCallback  callback,
                                   gpointer             user_data)
 {
+  ClutterActor *stage;
   ShellScreenshotPrivate *priv;
   GTask *result;
-  g_autoptr (GTask) task = NULL;
 
   g_return_if_fail (SHELL_IS_SCREENSHOT (screenshot));
   g_return_if_fail (G_IS_OUTPUT_STREAM (stream));
@@ -547,7 +574,6 @@ shell_screenshot_screenshot_area (ShellScreenshot     *screenshot,
 
   result = g_task_new (screenshot, NULL, callback, user_data);
   g_task_set_source_tag (result, shell_screenshot_screenshot_area);
-  g_task_set_task_data (result, screenshot, NULL);
 
   priv->stream = g_object_ref (stream);
   priv->screenshot_area.x = x;
@@ -555,34 +581,13 @@ shell_screenshot_screenshot_area (ShellScreenshot     *screenshot,
   priv->screenshot_area.width = width;
   priv->screenshot_area.height = height;
 
+  stage = CLUTTER_ACTOR (shell_global_get_stage (priv->global));
 
-  if (meta_is_wayland_compositor ())
-    {
-      do_grab_screenshot (screenshot,
-                          priv->screenshot_area.x,
-                          priv->screenshot_area.y,
-                          priv->screenshot_area.width,
-                          priv->screenshot_area.height,
-                          SHELL_SCREENSHOT_FLAG_NONE);
+  meta_disable_unredirect_for_display (shell_global_get_display (shell_global_get ()));
 
-      g_signal_emit (screenshot, signals[SCREENSHOT_TAKEN], 0,
-                     (cairo_rectangle_int_t *) &priv->screenshot_area);
+  g_signal_connect_after (stage, "actors-painted", G_CALLBACK (grab_area_screenshot), result);
 
-      task = g_task_new (screenshot, NULL, on_screenshot_written, result);
-      g_task_run_in_thread (task, write_screenshot_thread);
-    }
-  else
-    {
-      MetaDisplay *display = shell_global_get_display (priv->global);
-      ClutterStage *stage = shell_global_get_stage (priv->global);
-
-      meta_disable_unredirect_for_display (display);
-      clutter_actor_queue_redraw (CLUTTER_ACTOR (stage));
-      priv->flags = SHELL_SCREENSHOT_FLAG_NONE;
-      priv->mode = SHELL_SCREENSHOT_AREA;
-      g_signal_connect (stage, "after-paint",
-                        G_CALLBACK (on_after_paint), result);
-    }
+  clutter_actor_queue_redraw (stage);
 }
 
 /**
@@ -636,6 +641,7 @@ shell_screenshot_screenshot_window (ShellScreenshot     *screenshot,
 {
   ShellScreenshotPrivate *priv;
   MetaDisplay *display;
+  ClutterActor *stage;
   MetaWindow *window;
   GTask *result;
 
@@ -664,8 +670,15 @@ shell_screenshot_screenshot_window (ShellScreenshot     *screenshot,
 
   priv->stream = g_object_ref (stream);
   priv->include_frame = include_frame;
+  priv->include_cursor = include_cursor;
 
-  grab_window_screenshot (screenshot, include_cursor, result);
+  stage = CLUTTER_ACTOR (shell_global_get_stage (priv->global));
+
+  meta_disable_unredirect_for_display (shell_global_get_display (shell_global_get ()));
+
+  g_signal_connect_after (stage, "actors-painted", G_CALLBACK (grab_window_screenshot), result);
+
+  clutter_actor_queue_redraw (stage);
 }
 
 /**
@@ -714,7 +727,9 @@ shell_screenshot_pick_color (ShellScreenshot     *screenshot,
                              gpointer             user_data)
 {
   ShellScreenshotPrivate *priv;
-  g_autoptr (GTask) result = NULL;
+  MetaDisplay *display;
+  ClutterActor *stage;
+  GTask *result;
 
   g_return_if_fail (SHELL_IS_SCREENSHOT (screenshot));
 
@@ -728,14 +743,14 @@ shell_screenshot_pick_color (ShellScreenshot     *screenshot,
   priv->screenshot_area.width = 1;
   priv->screenshot_area.height = 1;
 
-  do_grab_screenshot (screenshot,
-                      priv->screenshot_area.x,
-                      priv->screenshot_area.y,
-                      1,
-                      1,
-                      SHELL_SCREENSHOT_FLAG_NONE);
+  display = shell_global_get_display (priv->global);
+  stage = CLUTTER_ACTOR (shell_global_get_stage (priv->global));
 
-  g_task_return_boolean (result, TRUE);
+  meta_disable_unredirect_for_display (display);
+
+  g_signal_connect_after (stage, "actors-painted", G_CALLBACK (grab_pixel), result);
+
+  clutter_actor_queue_redraw (stage);
 }
 
 #if G_BYTE_ORDER == G_LITTLE_ENDIAN

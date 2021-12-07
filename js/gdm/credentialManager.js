@@ -1,7 +1,7 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 /* exported CredentialManager */
 
-var CredentialManager = class CredentialManager {
+class CredentialManager {
     constructor(service) {
         this._token = null;
         this._service = service;
@@ -21,4 +21,4 @@ var CredentialManager = class CredentialManager {
     get service() {
         return this._service;
     }
-};
+}

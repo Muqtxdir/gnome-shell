@@ -1,6 +1,5 @@
 /* exported main */
 imports.gi.versions.Gtk = '3.0';
-imports.gi.versions.Soup = '2.4';
 
 const Format = imports.format;
 const Gettext = imports.gettext;

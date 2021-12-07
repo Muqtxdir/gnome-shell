@@ -1,0 +1,37 @@
+From: yun341 <5933468@qq.com>
+Date: Mon, 21 Sep 2020 22:11:41 +0800
+Subject: authPrompt: set value of beginRequestType to 'DONT_PROVIDE_USERNAME'
+
+Commit 809f820c introduct vmware SSO service to gnome-shell, the value
+beginRequestType should be set to 'DONT_PROVIDE_USERNAME', otherwise
+vmware sso will fail. This patch will fix it.
+
+Closes: https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/1443
+
+Origin: https://gitlab.gnome.org/GNOME/gnome-shell/-/commit/3fb321f
+
+Bug-Ubuntu: https://bugs.launchpad.net/bugs/1886592
+---
+ js/gdm/authPrompt.js | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/js/gdm/authPrompt.js b/js/gdm/authPrompt.js
+index a6ea6c8..40afacc 100644
+--- a/js/gdm/authPrompt.js
++++ b/js/gdm/authPrompt.js
+@@ -7,6 +7,7 @@ const Animation = imports.ui.animation;
+ const Batch = imports.gdm.batch;
+ const GdmUtil = imports.gdm.util;
+ const OVirt = imports.gdm.oVirt;
++const Vmware = imports.gdm.vmware;
+ const Params = imports.misc.params;
+ const ShellEntry = imports.ui.shellEntry;
+ const UserWidget = imports.ui.userWidget;
+@@ -484,6 +485,7 @@ var AuthPrompt = GObject.registerClass({
+             // respond to the request with the username
+             beginRequestType = BeginRequestType.PROVIDE_USERNAME;
+         } else if (this._userVerifier.serviceIsForeground(OVirt.SERVICE_NAME) ||
++                   this._userVerifier.serviceIsForeground(Vmware.SERVICE_NAME) ||
+                    this._userVerifier.serviceIsForeground(GdmUtil.SMARTCARD_SERVICE_NAME)) {
+             // We don't need to know the username if the user preempted the login screen
+             // with a smartcard or with preauthenticated oVirt credentials

@@ -100,12 +100,6 @@ st_texture_cache_class_init (StTextureCacheClass *klass)
   gobject_class->dispose = st_texture_cache_dispose;
   gobject_class->finalize = st_texture_cache_finalize;
 
-  /**
-   * StTextureCache::icon-theme-changed:
-   * @self: a #StTextureCache
-   *
-   * Emitted when the icon theme is changed.
-   */
   signals[ICON_THEME_CHANGED] =
     g_signal_new ("icon-theme-changed",
                   G_TYPE_FROM_CLASS (klass),
@@ -114,13 +108,6 @@ st_texture_cache_class_init (StTextureCacheClass *klass)
                   NULL, NULL, NULL,
                   G_TYPE_NONE, 0);
 
-  /**
-   * StTextureCache::texture-file-changed:
-   * @self: a #StTextureCache
-   * @file: a #GFile
-   *
-   * Emitted when the source file of a texture is changed.
-   */
   signals[TEXTURE_FILE_CHANGED] =
     g_signal_new ("texture-file-changed",
                   G_TYPE_FROM_CLASS (klass),
@@ -353,7 +340,7 @@ texture_load_data_free (gpointer p)
   if (data->actors)
     g_slist_free_full (data->actors, (GDestroyNotify) g_object_unref);
 
-  g_free (data);
+  g_slice_free (AsyncTextureLoadData, data);
 }
 
 /**
@@ -361,7 +348,7 @@ texture_load_data_free (gpointer p)
  * @pixbuf_loader: #GdkPixbufLoader loading the image
  * @width: the original width of the image
  * @height: the original height of the image
- * @data: pointer to the #Dimensions structure containing available width and height for the image,
+ * @data: pointer to the #Dimensions sructure containing available width and height for the image,
  *        available width or height can be -1 if the dimension is not limited
  *
  * Private function.
@@ -735,50 +722,12 @@ load_texture_async (StTextureCache       *cache,
 
 typedef struct {
   StTextureCache *cache;
-  ClutterContent *image;
+  ClutterActor *actor;
+  gint size;
   GObject *source;
   gulong notify_signal_id;
   gboolean weakref_active;
 } StTextureCachePropertyBind;
-
-static void
-st_texture_cache_load_surface (ClutterContent  **image,
-                               cairo_surface_t  *surface)
-{
-  g_return_if_fail (image != NULL);
-
-  if (surface != NULL &&
-      cairo_surface_get_type (surface) == CAIRO_SURFACE_TYPE_IMAGE &&
-      (cairo_image_surface_get_format (surface) == CAIRO_FORMAT_ARGB32 ||
-       cairo_image_surface_get_format (surface) == CAIRO_FORMAT_RGB24))
-    {
-      g_autoptr(GError) error = NULL;
-      int width, height, size;
-
-      width = cairo_image_surface_get_width (surface);
-      height = cairo_image_surface_get_width (surface);
-      size = MAX(width, height);
-
-      if (*image == NULL)
-        *image = st_image_content_new_with_preferred_size (size, size);
-
-      clutter_image_set_data (CLUTTER_IMAGE (*image),
-                              cairo_image_surface_get_data (surface),
-                              cairo_image_surface_get_format (surface) == CAIRO_FORMAT_ARGB32 ?
-                              COGL_PIXEL_FORMAT_BGRA_8888 : COGL_PIXEL_FORMAT_BGR_888,
-                              width,
-                              height,
-                              cairo_image_surface_get_stride (surface),
-                              &error);
-
-      if (error)
-        g_warning ("Failed to allocate texture: %s", error->message);
-    }
-  else if (*image == NULL)
-    {
-      *image = st_image_content_new_with_preferred_size (0, 0);
-    }
-}
 
 static void
 st_texture_cache_reset_texture (StTextureCachePropertyBind *bind,
@@ -788,7 +737,42 @@ st_texture_cache_reset_texture (StTextureCachePropertyBind *bind,
 
   g_object_get (bind->source, propname, &surface, NULL);
 
-  st_texture_cache_load_surface (&bind->image, surface);
+  if (surface != NULL &&
+      cairo_surface_get_type (surface) == CAIRO_SURFACE_TYPE_IMAGE &&
+      (cairo_image_surface_get_format (surface) == CAIRO_FORMAT_ARGB32 ||
+       cairo_image_surface_get_format (surface) == CAIRO_FORMAT_RGB24))
+    {
+      g_autoptr(ClutterContent) image = NULL;
+      g_autoptr(GError) error = NULL;
+      int size = bind->size;
+
+      if (size < 0)
+        clutter_actor_get_preferred_width (bind->actor, -1, NULL, (float *)&size);
+
+      image = clutter_actor_get_content (bind->actor);
+      if (!image || !CLUTTER_IS_IMAGE (image))
+        image = st_image_content_new_with_preferred_size (size, size);
+      else
+        g_object_ref (image);
+
+      clutter_image_set_data (CLUTTER_IMAGE (image),
+                              cairo_image_surface_get_data (surface),
+                              cairo_image_surface_get_format (surface) == CAIRO_FORMAT_ARGB32 ?
+                              COGL_PIXEL_FORMAT_BGRA_8888 : COGL_PIXEL_FORMAT_BGR_888,
+                              cairo_image_surface_get_width (surface),
+                              cairo_image_surface_get_height (surface),
+                              cairo_image_surface_get_stride (surface),
+                              &error);
+
+      if (image)
+        clutter_actor_set_content (bind->actor, image);
+      else if (error)
+        g_warning ("Failed to allocate texture: %s", error->message);
+
+      clutter_actor_set_opacity (bind->actor, 255);
+    }
+  else
+    clutter_actor_set_opacity (bind->actor, 0);
 }
 
 static void
@@ -814,67 +798,57 @@ st_texture_cache_free_bind (gpointer data)
 {
   StTextureCachePropertyBind *bind = data;
   if (bind->weakref_active)
-    g_object_weak_unref (G_OBJECT (bind->image), st_texture_cache_bind_weak_notify, bind);
-  g_free (bind);
+    g_object_weak_unref (G_OBJECT (bind->actor), st_texture_cache_bind_weak_notify, bind);
+  g_slice_free (StTextureCachePropertyBind, bind);
 }
 
 /**
  * st_texture_cache_bind_cairo_surface_property:
- * @cache: A #StTextureCache
- * @object: A #GObject with a property @property_name of type #cairo_surface_t
+ * @cache:
+ * @object: A #GObject with a property @property_name of type #GdkPixbuf
  * @property_name: Name of a property
  *
- * Create a #GIcon which tracks the #cairo_surface_t value of a GObject property
+ * Create a #ClutterActor which tracks the #cairo_surface_t value of a GObject property
  * named by @property_name.  Unlike other methods in StTextureCache, the underlying
  * #CoglTexture is not shared by default with other invocations to this method.
  *
  * If the source object is destroyed, the texture will continue to show the last
  * value of the property.
  *
- * Returns: (transfer full): A new #GIcon
+ * Return value: (transfer none): A new #StWidget
  */
-GIcon *
+StWidget *
 st_texture_cache_bind_cairo_surface_property (StTextureCache    *cache,
                                               GObject           *object,
-                                              const char        *property_name)
+                                              const char        *property_name,
+                                              gint               size)
 {
+  StWidget *widget;
   gchar *notify_key;
   StTextureCachePropertyBind *bind;
 
-  bind = g_new0 (StTextureCachePropertyBind, 1);
+  widget = g_object_new (ST_TYPE_WIDGET,
+                         "opacity", 0,
+                         "width", (float)size,
+                         "height", (float)size,
+                         NULL);
+
+  bind = g_slice_new0 (StTextureCachePropertyBind);
   bind->cache = cache;
+  bind->actor = CLUTTER_ACTOR (widget);
+  bind->size = size;
   bind->source = object;
+  g_object_weak_ref (G_OBJECT (widget), st_texture_cache_bind_weak_notify, bind);
+  bind->weakref_active = TRUE;
 
   st_texture_cache_reset_texture (bind, property_name);
-
-  g_object_weak_ref (G_OBJECT (bind->image), st_texture_cache_bind_weak_notify, bind);
-  bind->weakref_active = TRUE;
 
   notify_key = g_strdup_printf ("notify::%s", property_name);
   bind->notify_signal_id = g_signal_connect_data (object, notify_key, G_CALLBACK(st_texture_cache_on_pixbuf_notify),
                                                   bind, (GClosureNotify)st_texture_cache_free_bind, 0);
   g_free (notify_key);
 
-  return G_ICON (bind->image);
-}
-
-/**
- * st_texture_cache_load_cairo_surface_to_gicon:
- * @cache: A #StTextureCache
- * @surface: A #cairo_surface_t
- *
- * Create a #GIcon from @surface.
- *
- * Returns: (transfer full): A new #GIcon
- */
-GIcon *
-st_texture_cache_load_cairo_surface_to_gicon (StTextureCache  *cache,
-                                              cairo_surface_t *surface)
-{
-  ClutterContent *image = NULL;
-  st_texture_cache_load_surface (&image, surface);
-
-  return G_ICON (image);
+  return widget;
 }
 
 /**
@@ -919,7 +893,7 @@ st_texture_cache_load (StTextureCache       *cache,
 
 /**
  * ensure_request:
- * @cache: A #StTextureCache
+ * @cache:
  * @key: A cache key
  * @policy: Cache policy
  * @request: (out): If no request is outstanding, one will be created and returned here
@@ -957,7 +931,7 @@ ensure_request (StTextureCache        *cache,
   if (pending == NULL)
     {
       /* Not cached and no pending request, create it */
-      *request = g_new0 (AsyncTextureLoadData, 1);
+      *request = g_slice_new0 (AsyncTextureLoadData);
       if (policy != ST_TEXTURE_CACHE_POLICY_NONE)
         g_hash_table_insert (cache->priv->outstanding_requests, g_strdup (key), *request);
     }
@@ -972,8 +946,8 @@ ensure_request (StTextureCache        *cache,
 
 /**
  * st_texture_cache_load_gicon:
- * @cache: A #StTextureCache
- * @theme_node: (nullable): The #StThemeNode to use for colors, or %NULL
+ * @cache: The texture cache instance
+ * @theme_node: (nullable): The #StThemeNode to use for colors, or NULL
  *                            if the icon must not be recolored
  * @icon: the #GIcon to load
  * @size: Size of themed
@@ -984,7 +958,7 @@ ensure_request (StTextureCache        *cache,
  * icon isn't loaded already, the texture will be filled
  * asynchronously.
  *
- * Returns: (transfer none) (nullable): A new #ClutterActor for the icon, or %NULL if not found
+ * Return Value: (transfer none): A new #ClutterActor for the icon, or %NULL if not found
  */
 ClutterActor *
 st_texture_cache_load_gicon (StTextureCache    *cache,
@@ -998,34 +972,14 @@ st_texture_cache_load_gicon (StTextureCache    *cache,
   ClutterActor *actor;
   gint scale;
   char *gicon_string;
-  g_autofree char *key = NULL;
+  char *key;
   float actor_size;
   GtkIconTheme *theme;
+  GtkIconInfo *info;
   StTextureCachePolicy policy;
   StIconColors *colors = NULL;
   StIconStyle icon_style = ST_ICON_STYLE_REQUESTED;
   GtkIconLookupFlags lookup_flags;
-
-  actor_size = size * paint_scale;
-
-  if (ST_IS_IMAGE_CONTENT (icon))
-    {
-      int width, height;
-
-      g_object_get (G_OBJECT (icon),
-                    "preferred-width", &width,
-                    "preferred-height", &height,
-                    NULL);
-      if (width == 0 && height == 0)
-        return NULL;
-
-      return g_object_new (CLUTTER_TYPE_ACTOR,
-                           "content-gravity", CLUTTER_CONTENT_GRAVITY_RESIZE_ASPECT,
-                           "width", actor_size,
-                           "height", actor_size,
-                           "content", CLUTTER_CONTENT (icon),
-                           NULL);
-    }
 
   if (theme_node)
     {
@@ -1049,11 +1003,16 @@ st_texture_cache_load_gicon (StTextureCache    *cache,
     lookup_flags |= GTK_ICON_LOOKUP_DIR_LTR;
 
   scale = ceilf (paint_scale * resource_scale);
+  info = gtk_icon_theme_lookup_by_gicon_for_scale (theme, icon,
+                                                   size, scale,
+                                                   lookup_flags);
+  if (info == NULL)
+    return NULL;
 
   gicon_string = g_icon_to_string (icon);
   /* A return value of NULL indicates that the icon can not be serialized,
    * so don't have a unique identifier for it as a cache key, and thus can't
-   * be cached. If it is cacheable, we hardcode a policy of FOREVER here for
+   * be cached. If it is cachable, we hardcode a policy of FOREVER here for
    * now; we should actually blow this away on icon theme changes probably */
   policy = gicon_string != NULL ? ST_TEXTURE_CACHE_POLICY_FOREVER
                                 : ST_TEXTURE_CACHE_POLICY_NONE;
@@ -1075,27 +1034,21 @@ st_texture_cache_load_gicon (StTextureCache    *cache,
   g_free (gicon_string);
 
   actor = create_invisible_actor ();
-  clutter_actor_set_content_gravity  (actor, CLUTTER_CONTENT_GRAVITY_RESIZE_ASPECT);
+  actor_size = size * paint_scale;
   clutter_actor_set_size (actor, actor_size, actor_size);
-  if (!ensure_request (cache, key, policy, &request, actor))
+  if (ensure_request (cache, key, policy, &request, actor))
+    {
+      /* If there's an outstanding request, we've just added ourselves to it */
+      g_object_unref (info);
+      g_free (key);
+    }
+  else
     {
       /* Else, make a new request */
-      GtkIconInfo *info;
-
-      info = gtk_icon_theme_lookup_by_gicon_for_scale (theme, icon,
-                                                       size, scale,
-                                                       lookup_flags);
-      if (info == NULL)
-        {
-          g_hash_table_remove (cache->priv->outstanding_requests, key);
-          texture_load_data_free (request);
-          g_object_unref (actor);
-          return NULL;
-        }
 
       request->cache = cache;
       /* Transfer ownership of key */
-      request->key = g_steal_pointer (&key);
+      request->key = key;
       request->policy = policy;
       request->colors = colors ? st_icon_colors_ref (colors) : NULL;
       request->icon_info = info;
@@ -1229,7 +1182,7 @@ on_data_destroy (gpointer data)
   g_object_unref (d->gfile);
   g_object_unref (d->actor);
   g_object_unref (d->cancellable);
-  g_free (d);
+  g_slice_free (AsyncImageData, d);
 }
 
 static void
@@ -1394,7 +1347,7 @@ st_texture_cache_load_sliced_image (StTextureCache *cache,
   g_assert (paint_scale > 0);
   g_assert (resource_scale > 0);
 
-  data = g_new0 (AsyncImageData, 1);
+  data = g_slice_new0 (AsyncImageData);
   data->grid_width = grid_width;
   data->grid_height = grid_height;
   data->paint_scale = paint_scale;
@@ -1421,7 +1374,7 @@ st_texture_cache_load_sliced_image (StTextureCache *cache,
 
 /**
  * st_texture_cache_load_file_async:
- * @cache: A #StTextureCache
+ * @cache: The texture cache instance
  * @file: a #GFile of the image file from which to create a pixbuf
  * @available_width: available width for the image, can be -1 if not limited
  * @available_height: available height for the image, can be -1 if not limited
@@ -1432,7 +1385,7 @@ st_texture_cache_load_sliced_image (StTextureCache *cache,
  * size of zero.  At some later point, either the image will be loaded successfully
  * and at that point size will be negotiated, or upon an error, no image will be set.
  *
- * Returns: (transfer none): A new #ClutterActor with no image loaded initially.
+ * Return value: (transfer none): A new #ClutterActor with no image loaded initially.
  */
 ClutterActor *
 st_texture_cache_load_file_async (StTextureCache *cache,
@@ -1662,7 +1615,7 @@ static StTextureCache *instance = NULL;
 /**
  * st_texture_cache_get_default:
  *
- * Returns: (transfer none): The global texture cache
+ * Return value: (transfer none): The global texture cache
  */
 StTextureCache*
 st_texture_cache_get_default (void)
@@ -1672,13 +1625,6 @@ st_texture_cache_get_default (void)
   return instance;
 }
 
-/**
- * st_texture_cache_rescan_icon_theme:
- *
- * Rescan the current icon theme, if necessary.
- *
- * Returns: %TRUE if the icon theme has changed and needed to be reloaded.
- */
 gboolean
 st_texture_cache_rescan_icon_theme (StTextureCache *cache)
 {

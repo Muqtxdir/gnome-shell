@@ -11,14 +11,21 @@ class RemoteAccessApplet extends PanelMenu.SystemIndicator {
     _init() {
         super._init();
 
-        let controller = global.backend.get_remote_access_controller();
+        let backend = Meta.get_backend();
+        let controller = backend.get_remote_access_controller();
 
         if (!controller)
             return;
 
+        // We can't possibly know about all types of screen sharing on X11, so
+        // showing these controls on X11 might give a false sense of security.
+        // Thus, only enable these controls when using Wayland, where we are
+        // in control of sharing.
+        if (!Meta.is_wayland_compositor())
+            return;
+
         this._handles = new Set();
-        this._sharedIndicator = null;
-        this._recordingIndicator = null;
+        this._indicator = null;
         this._menuSection = null;
 
         controller.connect('new-handle', (o, handle) => {
@@ -27,49 +34,32 @@ class RemoteAccessApplet extends PanelMenu.SystemIndicator {
     }
 
     _ensureControls() {
-        if (this._sharedIndicator && this._recordingIndicator)
+        if (this._indicator)
             return;
 
-        this._sharedIndicator = this._addIndicator();
-        this._sharedIndicator.icon_name = 'screen-shared-symbolic';
-        this._sharedIndicator.add_style_class_name('remote-access-indicator');
-
-        this._sharedItem =
+        this._indicator = this._addIndicator();
+        this._indicator.icon_name = 'screen-shared-symbolic';
+        this._indicator.add_style_class_name('remote-access-indicator');
+        this._item =
             new PopupMenu.PopupSubMenuMenuItem(_("Screen is Being Shared"),
                                                true);
-        this._sharedItem.menu.addAction(_("Turn off"),
-            () => {
-                for (let handle of this._handles) {
-                    if (!handle.is_recording)
-                        handle.stop();
-                }
-            });
-        this._sharedItem.icon.icon_name = 'screen-shared-symbolic';
-        this.menu.addMenuItem(this._sharedItem);
-
-        this._recordingIndicator = this._addIndicator();
-        this._recordingIndicator.icon_name = 'media-record-symbolic';
-        this._recordingIndicator.add_style_class_name('screencast-indicator');
-    }
-
-    _isScreenShared() {
-        return [...this._handles].some(handle => !handle.is_recording);
-    }
-
-    _isRecording() {
-        return [...this._handles].some(handle => handle.is_recording);
+        this._item.menu.addAction(_("Turn off"),
+                                  () => {
+                                      for (let handle of this._handles)
+                                          handle.stop();
+                                  });
+        this._item.icon.icon_name = 'screen-shared-symbolic';
+        this.menu.addMenuItem(this._item);
     }
 
     _sync() {
-        if (this._isScreenShared()) {
-            this._sharedIndicator.visible = true;
-            this._sharedItem.visible = true;
+        if (this._handles.size == 0) {
+            this._indicator.visible = false;
+            this._item.visible = false;
         } else {
-            this._sharedIndicator.visible = false;
-            this._sharedItem.visible = false;
+            this._indicator.visible = true;
+            this._item.visible = true;
         }
-
-        this._recordingIndicator.visible = this._isRecording();
     }
 
     _onStopped(handle) {
@@ -78,20 +68,12 @@ class RemoteAccessApplet extends PanelMenu.SystemIndicator {
     }
 
     _onNewHandle(handle) {
-        // We can't possibly know about all types of screen sharing on X11, so
-        // showing these controls on X11 might give a false sense of security.
-        // Thus, only enable these controls when using Wayland, where we are
-        // in control of sharing.
-        //
-        // We still want to show screen recordings though, to indicate when
-        // the built in screen recorder is active, no matter the session type.
-        if (!Meta.is_wayland_compositor() && !handle.is_recording)
-            return;
-
         this._handles.add(handle);
         handle.connect('stopped', this._onStopped.bind(this));
 
-        this._ensureControls();
-        this._sync();
+        if (this._handles.size == 1) {
+            this._ensureControls();
+            this._sync();
+        }
     }
 });

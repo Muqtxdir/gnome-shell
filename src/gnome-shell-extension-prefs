@@ -13,10 +13,10 @@ openPrefs() {
 }
 
 cat >&2 <<EOT
-The gnome-shell-extension-prefs program is deprecated.
+gnome-shell-extension-prefs is deprecated
 
-Run gnome-extensions-app (from the gnome-shell-extension-prefs package)
-for extension management, or use the gnome-extensions command line tool.
+Install https://flathub.org/apps/details/org.gnome.Extensions for extension
+management, or use the gnome-extensions command line tool.
 
 Extensions can use the ExtensionUtils.openPrefs() method.
 EOT

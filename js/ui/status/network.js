@@ -15,11 +15,6 @@ const Util = imports.misc.util;
 
 const { loadInterfaceXML } = imports.misc.fileUtils;
 
-Gio._promisify(Gio.DBusConnection.prototype, 'call', 'call_finish');
-Gio._promisify(NM.Client, 'new_async', 'new_finish');
-Gio._promisify(NM.Client.prototype,
-    'check_connectivity_async', 'check_connectivity_finish');
-
 const NMConnectionCategory = {
     INVALID: 'invalid',
     WIRED: 'wired',
@@ -54,16 +49,15 @@ const PortalHelperIface = loadInterfaceXML('org.gnome.Shell.PortalHelper');
 const PortalHelperProxy = Gio.DBusProxy.makeProxyWrapper(PortalHelperIface);
 
 function signalToIcon(value) {
-    if (value < 20)
-        return 'none';
-    else if (value < 40)
-        return 'weak';
-    else if (value < 50)
-        return 'ok';
-    else if (value < 80)
-        return 'good';
-    else
+    if (value > 80)
         return 'excellent';
+    if (value > 55)
+        return 'good';
+    if (value > 30)
+        return 'ok';
+    if (value > 5)
+        return 'weak';
+    return 'none';
 }
 
 function ssidToLabel(ssid) {
@@ -81,30 +75,6 @@ function ensureActiveConnectionProps(active) {
             let device = devices[0]._delegate;
             active._primaryDevice = device;
         }
-    }
-}
-
-function launchSettingsPanel(panel, ...args) {
-    const param = new GLib.Variant('(sav)',
-        [panel, args.map(s => new GLib.Variant('s', s))]);
-    const platformData = {
-        'desktop-startup-id': new GLib.Variant('s',
-            '_TIME%s'.format(global.get_current_time())),
-    };
-    try {
-        Gio.DBus.session.call(
-            'org.gnome.ControlCenter',
-            '/org/gnome/ControlCenter',
-            'org.freedesktop.Application',
-            'ActivateAction',
-            new GLib.Variant('(sava{sv})',
-                ['launch-panel', [param], platformData]),
-            null,
-            Gio.DBusCallFlags.NONE,
-            -1,
-            null);
-    } catch (e) {
-        log('Failed to launch Settings panel: %s'.format(e.message));
     }
 }
 
@@ -128,11 +98,6 @@ var NMConnectionItem = class {
     }
 
     destroy() {
-        if (this._activeConnectionChangedId) {
-            this._activeConnection.disconnect(this._activeConnectionChangedId);
-            this._activeConnectionChangedId = 0;
-        }
-
         this.labelItem.destroy();
         this.radioItem.destroy();
     }
@@ -570,7 +535,8 @@ var NMDeviceModem = class extends NMConnectionDevice {
     }
 
     _autoConnect() {
-        launchSettingsPanel('network', 'connect-3g', this._device.get_path());
+        Util.spawn(['gnome-control-center', 'network',
+                    'connect-3g', this._device.get_path()]);
     }
 
     destroy() {
@@ -746,7 +712,8 @@ class NMWirelessDialog extends ModalDialog.ModalDialog {
 
         let connections = client.get_connections();
         this._connections = connections.filter(
-            connection => device.connection_valid(connection));
+            connection => device.connection_valid(connection)
+        );
 
         this._apAddedId = device.connect('access-point-added', this._accessPointAdded.bind(this));
         this._apRemovedId = device.connect('access-point-removed', this._accessPointRemoved.bind(this));
@@ -942,7 +909,7 @@ class NMWirelessDialog extends ModalDialog.ModalDialog {
 
         this.contentLayout.add_child(this._stack);
 
-        this._disconnectButton = this.addButton({ action: () => this.close(),
+        this._disconnectButton = this.addButton({ action: this.close.bind(this),
                                                   label: _("Cancel"),
                                                   key: Clutter.KEY_Escape });
         this._connectButton = this.addButton({ action: this._connect.bind(this),
@@ -961,8 +928,8 @@ class NMWirelessDialog extends ModalDialog.ModalDialog {
                 (accessPoints[0]._secType == NMAccessPointSecurity.WPA_ENT)) {
                 // 802.1x-enabled APs require further configuration, so they're
                 // handled in gnome-control-center
-                launchSettingsPanel('wifi', 'connect-8021x-wifi',
-                    this._device.get_path(), accessPoints[0].get_path());
+                Util.spawn(['gnome-control-center', 'wifi', 'connect-8021x-wifi',
+                            this._device.get_path(), accessPoints[0].get_path()]);
             } else {
                 let connection = new NM.SimpleConnection();
                 this._client.add_and_activate_connection_async(connection, this._device, accessPoints[0].get_path(), null, null);
@@ -1594,6 +1561,7 @@ var DeviceCategory = class extends PopupMenu.PopupMenuSection {
         this._summaryItem.menu.addSettingsAction(_('Network Settings'),
                                                  'gnome-network-panel.desktop');
         this._summaryItem.hide();
+
     }
 
     _sync() {
@@ -1659,11 +1627,11 @@ class Indicator extends PanelMenu.SystemIndicator {
         this._ctypes[NM.SETTING_GSM_SETTING_NAME] = NMConnectionCategory.WWAN;
         this._ctypes[NM.SETTING_VPN_SETTING_NAME] = NMConnectionCategory.VPN;
 
-        this._getClient();
+        NM.Client.new_async(null, this._clientGot.bind(this));
     }
 
-    async _getClient() {
-        this._client = await NM.Client.new_async(null);
+    _clientGot(obj, result) {
+        this._client = NM.Client.new_finish(result);
 
         this._activeConnections = [];
         this._connections = [];
@@ -1891,7 +1859,8 @@ class Indicator extends PanelMenu.SystemIndicator {
     _syncVpnConnections() {
         let activeConnections = this._client.get_active_connections() || [];
         let vpnConnections = activeConnections.filter(
-            a => a instanceof NM.VpnConnection);
+            a => a instanceof NM.VpnConnection
+        );
         vpnConnections.forEach(a => {
             ensureActiveConnectionProps(a);
         });
@@ -2013,7 +1982,7 @@ class Indicator extends PanelMenu.SystemIndicator {
         }
     }
 
-    async _portalHelperDone(proxy, emitter, parameters) {
+    _portalHelperDone(proxy, emitter, parameters) {
         let [path, result] = parameters;
 
         if (result == PortalHelperResult.CANCELLED) {
@@ -2024,11 +1993,13 @@ class Indicator extends PanelMenu.SystemIndicator {
         } else if (result == PortalHelperResult.COMPLETED) {
             this._closeConnectivityCheck(path);
         } else if (result == PortalHelperResult.RECHECK) {
-            try {
-                const state = await this._client.check_connectivity_async(null);
-                if (state >= NM.ConnectivityState.FULL)
-                    this._closeConnectivityCheck(path);
-            } catch (e) { }
+            this._client.check_connectivity_async(null, (client, res) => {
+                try {
+                    let state = client.check_connectivity_finish(res);
+                    if (state >= NM.ConnectivityState.FULL)
+                        this._closeConnectivityCheck(path);
+                } catch (e) { }
+            });
         } else {
             log('Invalid result from portal helper: %s'.format(result));
         }

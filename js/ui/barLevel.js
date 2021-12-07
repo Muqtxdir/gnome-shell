@@ -30,8 +30,8 @@ var BarLevel = GObject.registerClass({
             accessible_role: Atk.Role.LEVEL_BAR,
         };
         super._init(Object.assign(defaultParams, params));
-        this.connect('notify::allocation', () => {
-            this._barLevelWidth = this.allocation.get_width();
+        this.connect('allocation-changed', (actor, box) => {
+            this._barLevelWidth = box.get_width();
         });
 
         this._customAccessible = St.GenericAccessible.new_for_actor(this);
@@ -60,11 +60,13 @@ var BarLevel = GObject.registerClass({
         this.queue_repaint();
     }
 
-    get maximumValue() {
+    // eslint-disable-next-line camelcase
+    get maximum_value() {
         return this._maxValue;
     }
 
-    set maximumValue(value) {
+    // eslint-disable-next-line camelcase
+    set maximum_value(value) {
         value = Math.max(value, 1);
 
         if (this._maxValue == value)
@@ -76,11 +78,13 @@ var BarLevel = GObject.registerClass({
         this.queue_repaint();
     }
 
-    get overdriveStart() {
+    // eslint-disable-next-line camelcase
+    get overdrive_start() {
         return this._overdriveStart;
     }
 
-    set overdriveStart(value) {
+    // eslint-disable-next-line camelcase
+    set overdrive_start(value) {
         if (this._overdriveStart == value)
             return;
 

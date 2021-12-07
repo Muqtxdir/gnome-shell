@@ -41,7 +41,6 @@ foreach service_file : service_files
   )
 endforeach
 
-theme_deps = []
 
 subdir('dbus-interfaces')
 subdir('icons')
@@ -108,21 +107,22 @@ if have_systemd
   unitconf.set('bindir', bindir)
 
   configure_file(
-    input: 'org.gnome.Shell@x11.service.in',
-    output: 'org.gnome.Shell@x11.service',
+    input: 'gnome-shell-x11.service.in',
+    output: 'gnome-shell-x11.service',
     configuration: unitconf,
     install_dir: systemduserunitdir
   )
 
   configure_file(
-    input: 'org.gnome.Shell@wayland.service.in',
-    output: 'org.gnome.Shell@wayland.service',
+    input: 'gnome-shell-wayland.service.in',
+    output: 'gnome-shell-wayland.service',
     configuration: unitconf,
     install_dir: systemduserunitdir
   )
 
-  units = files('org.gnome.Shell.target',
-                'org.gnome.Shell-disable-extensions.service')
+  units = files('gnome-shell-x11.target',
+                'gnome-shell-wayland.target',
+                'gnome-shell-disable-extensions.service')
 
   install_data(units, install_dir: systemduserunitdir)
 endif

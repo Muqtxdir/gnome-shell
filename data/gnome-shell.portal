@@ -1,4 +1,4 @@
 [portal]
-DBusName=org.gnome.Shell.Portal
+DBusName=org.freedesktop.impl.portal.desktop.gnome
 Interfaces=org.freedesktop.impl.portal.Access
 UseIn=gnome
