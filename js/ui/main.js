@@ -393,8 +393,37 @@ function _getDefaultStylesheet() {
     // theme
     if (St.Settings.get().gtk_theme == 'HighContrast')
         stylesheet = _getStylesheet(name.replace('.css', '-high-contrast.css'));
+    if (St.Settings.get().gtk_theme == 'Yaru-Aqua')
+        stylesheet = _getStylesheet(name.replace('.css', '-aqua.css'));
+    if (St.Settings.get().gtk_theme == 'Yaru-Blue')
+        stylesheet = _getStylesheet(name.replace('.css', '-blue.css'));
+    if (St.Settings.get().gtk_theme == 'Yaru-Green')
+        stylesheet = _getStylesheet(name.replace('.css', '-green.css'));
+    if (St.Settings.get().gtk_theme == 'Yaru-Lavender')
+        stylesheet = _getStylesheet(name.replace('.css', '-lavender.css'));
+    if (St.Settings.get().gtk_theme == 'Yaru-Pink')
+        stylesheet = _getStylesheet(name.replace('.css', '-pink.css'));
+    if (St.Settings.get().gtk_theme == 'Yaru-Red')
+        stylesheet = _getStylesheet(name.replace('.css', '-red.css'));
+    if (St.Settings.get().gtk_theme == 'Yaru-Yellow')
+        stylesheet = _getStylesheet(name.replace('.css', '-yellow.css'));
     if (St.Settings.get().gtk_theme == 'Yaru-dark')
         stylesheet = _getStylesheet(name.replace('.css', '-dark.css'));
+    if (St.Settings.get().gtk_theme == 'Yaru-Aqua-dark')
+        stylesheet = _getStylesheet(name.replace('.css', '-aqua-dark.css'));
+    if (St.Settings.get().gtk_theme == 'Yaru-Blue-dark')
+        stylesheet = _getStylesheet(name.replace('.css', '-blue-dark.css'));
+    if (St.Settings.get().gtk_theme == 'Yaru-Green-dark')
+        stylesheet = _getStylesheet(name.replace('.css', '-green-dark.css'));
+    if (St.Settings.get().gtk_theme == 'Yaru-Lavender-dark')
+        stylesheet = _getStylesheet(name.replace('.css', '-lavender-dark.css'));
+    if (St.Settings.get().gtk_theme == 'Yaru-Pink-dark')
+        stylesheet = _getStylesheet(name.replace('.css', '-pink-dark.css'));
+    if (St.Settings.get().gtk_theme == 'Yaru-Red-dark')
+        stylesheet = _getStylesheet(name.replace('.css', '-red-dark.css'));
+    if (St.Settings.get().gtk_theme == 'Yaru-Yellow-dark')
+        stylesheet = _getStylesheet(name.replace('.css', '-yellow-dark.css'));
+        
 
     if (stylesheet == null)
         stylesheet = _getStylesheet(sessionMode.stylesheetName);
